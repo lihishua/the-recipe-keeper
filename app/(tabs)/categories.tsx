@@ -8,12 +8,12 @@ import { useRecipes, Recipe, Category } from '../../src/context/RecipeContext';
 import { Colors, Radius, Shadow } from '../../src/theme';
 
 const CATS: { key: Category; emoji: string; bg: string }[] = [
-  { key: 'italian', emoji: '🍝', bg: '#FFF3E0' },
-  { key: 'desserts', emoji: '🍰', bg: '#FCE4EC' },
-  { key: 'salads', emoji: '🥗', bg: '#E8F5E9' },
-  { key: 'breakfast', emoji: '🥞', bg: '#E3F2FD' },
-  { key: 'asian', emoji: '🍜', bg: '#F3E5F5' },
-  { key: 'other', emoji: '🍽', bg: '#FFF8E1' },
+  { key: 'italian',   emoji: '🍝', bg: '#faeee3' },
+  { key: 'desserts',  emoji: '🍰', bg: '#f0dde6' },
+  { key: 'salads',    emoji: '🥗', bg: '#d0eaec' },
+  { key: 'breakfast', emoji: '🥞', bg: '#fdfbf7' },
+  { key: 'asian',     emoji: '🍜', bg: '#e5d5dc' },
+  { key: 'other',     emoji: '🍽', bg: '#f5ede3' },
 ];
 
 export default function CategoriesScreen() {
@@ -92,7 +92,7 @@ export default function CategoriesScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.cream },
   topBar: {
-    backgroundColor: Colors.sun, flexDirection: 'row',
+    backgroundColor: Colors.mauve, flexDirection: 'row',
     alignItems: 'center', padding: 20, paddingBottom: 14, gap: 12,
   },
   topTitle: { color: '#fff', fontSize: 22, fontWeight: '700', fontFamily: 'Gan' },
@@ -101,7 +101,7 @@ const styles = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap', padding: 12, gap: 12, paddingBottom: 100 },
   catCard: {
     width: '47%', borderRadius: Radius.lg, padding: 20,
-    alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,216,155,0.4)',
+    alignItems: 'center', borderWidth: 1, borderColor: 'rgba(223,123,62,0.2)',
   },
   catEmoji: { fontSize: 38, marginBottom: 8 },
   catName: { fontSize: 16, fontWeight: '700', color: Colors.text, marginBottom: 4, fontFamily: 'Gan' },

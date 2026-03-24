@@ -55,7 +55,7 @@ const RecipeContext = createContext<RecipeContextType>({
   getRecipeById: () => undefined,
 });
 
-const STORAGE_KEY = 'nibble_recipes';
+const STORAGE_KEY = '2spoons_recipes';
 
 // Demo recipes
 const DEMO: Recipe[] = [

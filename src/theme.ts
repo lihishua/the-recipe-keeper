@@ -1,25 +1,27 @@
 // src/theme.ts
 export const Colors = {
-  sun: '#C2698A',        // dusty rose — main accent (buttons, bars)
-  sunLight: '#D98FAD',   // medium rose
-  sunLighter: '#FAE8F1', // pale blush — pill backgrounds
-  sunDark: '#A34E6F',    // deep rose — pressed / active
-  yolk: '#E8B4CC',       // baby pink (was yellow)
-  cream: '#FDF5F9',      // near-white with blush tint — page backgrounds
-  warm: '#F8EEF4',       // soft pink warm — thumbnail backgrounds
+  sun: '#df7b3e',        // orange — main accent (buttons, bars)
+  sunLight: '#e8965e',   // medium orange
+  sunLighter: '#faeee3', // pale orange — pill backgrounds
+  sunDark: '#c4622a',    // deep orange — pressed / active
+  yolk: '#f5c49a',       // warm peach — logo accent
+  cream: '#fdfbf7',      // near-white — page backgrounds
+  warm: '#f5ede3',       // soft warm — thumbnail backgrounds
   card: '#FFFFFF',
-  border: '#F0C6DA',     // soft rose border
-  text: '#2D1020',       // very dark plum (was dark brown)
-  text2: '#7A3558',      // medium mauve
-  text3: '#BA8FA4',      // light dusty mauve
+  border: '#e8ddd5',     // warm light border
+  text: '#36312d',       // dark brown
+  text2: '#7a6b62',      // medium warm brown
+  text3: '#b0a49d',      // light warm brown
+  mauve: '#9b4a6a',      // mauve — dietary tags, highlights
+  mauveLight: '#f0dde6', // light mauve
   green: '#4CAF50',
   greenLight: '#E8F5E9',
   greenDark: '#2E7D32',
-  blue: '#1565C0',
-  blueLight: '#E3F2FD',
+  blue: '#18727d',       // teal — secondary accent
+  blueLight: '#d0eaec',  // light teal
   red: '#D32F2F',
-  pink: '#FCE4EC',
-  purple: '#F3E5F5',
+  pink: '#f0dde6',       // light mauve
+  purple: '#faeee3',     // light orange
   white: '#FFFFFF',
 };
 
@@ -39,14 +41,14 @@ export const Radius = {
 
 export const Shadow = {
   sm: {
-    shadowColor: '#2D1B00',
+    shadowColor: '#36312d',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
     shadowRadius: 4,
     elevation: 2,
   },
   md: {
-    shadowColor: '#2D1B00',
+    shadowColor: '#36312d',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.12,
     shadowRadius: 8,

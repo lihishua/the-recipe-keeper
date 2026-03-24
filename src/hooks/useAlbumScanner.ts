@@ -24,7 +24,7 @@ export function useAlbumScanner() {
     if (requested !== 'granted') {
       Alert.alert(
         'הרשאה נדרשת',
-        'ניבל צריך גישה לאלבום כדי לסרוק מתכונים. פתח הגדרות כדי לאפשר גישה.',
+        '2Spoons צריך גישה לאלבום כדי לסרוק מתכונים. פתח הגדרות כדי לאפשר גישה.',
         [
           { text: 'ביטול', style: 'cancel' },
           { text: 'פתח הגדרות', onPress: () => Linking.openSettings() },

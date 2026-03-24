@@ -117,6 +117,12 @@ For tags: detect from context if not explicit (e.g. if no meat/fish → vegetari
       }),
     });
 
+    if (!res.ok) {
+      const rawError = await res.text();
+      console.error('Claude API HTTP error:', res.status, rawError);
+      throw new Error(`API ${res.status}: ${rawError.slice(0, 200)}`);
+    }
+
     const data = await res.json();
     if (data.error) {
       console.error('Claude API error:', JSON.stringify(data.error));

@@ -25,7 +25,7 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <LanguageProvider>
           <RecipeProvider>
-            <StatusBar style="light" backgroundColor="#C2698A" />
+            <StatusBar style="light" backgroundColor="#9b4a6a" />
             <Stack screenOptions={{ headerShown: false }}>
               <Stack.Screen name="(tabs)" />
               <Stack.Screen name="collection" options={{ presentation: 'card' }} />

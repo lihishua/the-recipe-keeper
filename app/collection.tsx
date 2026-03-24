@@ -11,6 +11,15 @@ import { useLang } from '../src/context/LanguageContext';
 import { useRecipes, Recipe, Category } from '../src/context/RecipeContext';
 import { Colors, Radius, Shadow } from '../src/theme';
 
+const CATEGORY_COLORS: Record<string, string> = {
+  italian: '#faeee3',
+  desserts: '#f0dde6',
+  salads: '#d0eaec',
+  breakfast: '#fdfbf7',
+  asian: '#e5d5dc',
+  other: '#f5ede3',
+};
+
 type Tab = 'all' | 'latest' | 'search' | 'tags' | 'suggestion';
 type SortOrder = 'alpha' | 'newest';
 type UnifiedTag = Category | 'vegan' | 'vegetarian' | 'glutenFree' | 'dairyFree';
@@ -128,9 +137,10 @@ export default function CollectionScreen() {
   // ── Grid item
   const GridItem = ({ item }: { item: Recipe }) => {
     const title = (lang === 'he' ? item.titleHe : item.titleEn) ?? item.title;
+    const thumbColor = CATEGORY_COLORS[item.category] ?? Colors.warm;
     return (
       <TouchableOpacity style={styles.gridItem} onPress={() => router.push(`/recipe/${item.id}`)}>
-        <View style={styles.gridThumb}>
+        <View style={[styles.gridThumb, { backgroundColor: thumbColor }]}>
           <Text style={{ fontSize: 40 }}>{item.emoji}</Text>
         </View>
         <Text style={[styles.gridTitle, { textAlign: isRTL ? 'right' : 'left' }]} numberOfLines={2}>{title}</Text>
@@ -147,9 +157,10 @@ export default function CollectionScreen() {
   // ── List item
   const ListItem = ({ item }: { item: Recipe }) => {
     const title = (lang === 'he' ? item.titleHe : item.titleEn) ?? item.title;
+    const thumbColor = CATEGORY_COLORS[item.category] ?? Colors.warm;
     return (
       <TouchableOpacity style={[styles.listItem, { flexDirection: rowDir }]} onPress={() => router.push(`/recipe/${item.id}`)}>
-        <View style={styles.listThumb}>
+        <View style={[styles.listThumb, { backgroundColor: thumbColor }]}>
           <Text style={{ fontSize: 28 }}>{item.emoji}</Text>
         </View>
         <View style={{ flex: 1 }}>
@@ -212,7 +223,7 @@ export default function CollectionScreen() {
             style={[styles.tabBtn, tab === key && styles.tabBtnActive]}
             onPress={() => handleTabPress(key)}
           >
-            <MaterialCommunityIcons name={icon} size={16} color={tab === key ? '#fff' : Colors.text2} />
+            <MaterialCommunityIcons name={icon} size={16} color={tab === key ? '#18727d' : 'rgba(255,255,255,0.85)'} />
             <Text style={[styles.tabBtnText, tab === key && styles.tabBtnTextActive, { fontFamily: fontHe }]} numberOfLines={1}>
               {label}
             </Text>
@@ -370,7 +381,7 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.cream },
 
   topBar: {
-    backgroundColor: Colors.sun, alignItems: 'center',
+    backgroundColor: Colors.mauve, alignItems: 'center',
     justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12,
   },
   iconBtn: {
@@ -382,31 +393,31 @@ const styles = StyleSheet.create({
 
   // Tabs
   tabRow: {
-    backgroundColor: Colors.card, borderBottomWidth: 1, borderBottomColor: Colors.border,
+    backgroundColor: '#18727d',
     paddingHorizontal: 10, paddingVertical: 10, gap: 8,
     flexDirection: 'row', alignItems: 'center',
   },
   tabBtn: {
     paddingVertical: 8, paddingHorizontal: 14, borderRadius: Radius.pill,
-    alignItems: 'center', backgroundColor: Colors.cream,
-    borderWidth: 1.5, borderColor: Colors.border, gap: 4, flexShrink: 0,
+    alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.15)',
+    borderWidth: 0, gap: 4, flexShrink: 0,
   },
-  tabBtnActive: { backgroundColor: Colors.sun, borderColor: Colors.sun },
-  tabBtnText: { fontSize: 11, fontWeight: '600', color: Colors.text2 },
-  tabBtnTextActive: { color: '#fff' },
+  tabBtnActive: { backgroundColor: '#fff' },
+  tabBtnText: { fontSize: 11, fontWeight: '600', color: 'rgba(255,255,255,0.85)' },
+  tabBtnTextActive: { color: '#18727d' },
 
   // Sort
   sortRow: {
-    backgroundColor: Colors.card, paddingHorizontal: 12, paddingVertical: 8,
+    backgroundColor: Colors.sunLighter, paddingHorizontal: 12, paddingVertical: 8,
     borderBottomWidth: 1, borderBottomColor: Colors.border, gap: 8,
   },
   sortChip: {
     borderWidth: 1.5, borderColor: Colors.border, borderRadius: Radius.pill,
-    paddingHorizontal: 14, paddingVertical: 6, backgroundColor: Colors.cream,
+    paddingHorizontal: 14, paddingVertical: 6, backgroundColor: Colors.card,
   },
-  sortChipActive: { backgroundColor: Colors.sunLighter, borderColor: Colors.sun },
+  sortChipActive: { backgroundColor: Colors.sun, borderColor: Colors.sun },
   sortChipText: { fontSize: 12, fontWeight: '600', color: Colors.text2 },
-  sortChipTextActive: { color: Colors.sunDark },
+  sortChipTextActive: { color: '#fff' },
 
   // Search
   searchRow: {

@@ -76,7 +76,7 @@ export default function RecentScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.cream },
-  topBar: { backgroundColor: Colors.sun, padding: 20, paddingBottom: 14 },
+  topBar: { backgroundColor: Colors.mauve, padding: 20, paddingBottom: 14 },
   topTitle: { color: '#fff', fontSize: 22, fontWeight: '700', fontFamily: 'Gan' },
   item: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.card,

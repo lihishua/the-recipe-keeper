@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "The Recipe Keeper",
-    "slug": "the-recipe-keeper",
+    "name": "2Spoons",
+    "slug": "2spoons",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -11,31 +11,31 @@
       "resizeMode": "contain",
       "backgroundColor": "#FF8C00"
     },
-    "scheme": "the-recipe-keeper",
+    "scheme": "2spoons",
     "plugins": [
       "expo-router",
       [
         "expo-media-library",
         {
-          "photosPermission": "The Recipe Keeper needs access to your photos to find and save recipe screenshots.",
-          "savePhotosPermission": "Allow The Recipe Keeper to save photos.",
+          "photosPermission": "2Spoons needs access to your photos to find and save recipe screenshots.",
+          "savePhotosPermission": "Allow 2Spoons to save photos.",
           "isAccessMediaLocationEnabled": true
         }
       ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "The Recipe Keeper needs access to your photos to scan recipe images."
+          "photosPermission": "2Spoons needs access to your photos to scan recipe images."
         }
       ],
       "expo-font"
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.yourname.therecipekeeper",
+      "bundleIdentifier": "com.yourname.twospoons",
       "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "The Recipe Keeper scans your photo album to find recipe screenshots.",
-        "NSPhotoLibraryAddUsageDescription": "The Recipe Keeper saves recipe images."
+        "NSPhotoLibraryUsageDescription": "2Spoons scans your photo album to find recipe screenshots.",
+        "NSPhotoLibraryAddUsageDescription": "2Spoons saves recipe images."
       }
     },
     "android": {
@@ -48,7 +48,7 @@
         "READ_EXTERNAL_STORAGE",
         "WRITE_EXTERNAL_STORAGE"
       ],
-      "package": "com.yourname.therecipekeeper"
+      "package": "com.yourname.twospoons"
     },
     "web": {
       "bundler": "metro",

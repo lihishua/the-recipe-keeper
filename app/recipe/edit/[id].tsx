@@ -1,21 +1,43 @@
 // app/recipe/edit/[id].tsx
 import React, { useState } from 'react';
 import {
-  View, Text, TextInput, ScrollView, TouchableOpacity,
-  StyleSheet, KeyboardAvoidingView, Platform, Switch,
+  View, Text, TextInput, ScrollView, TouchableOpacity, Image,
+  StyleSheet, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { useLang } from '../../../src/context/LanguageContext';
 import { useRecipes, Recipe, RecipeTags, Category } from '../../../src/context/RecipeContext';
 import { Colors, Fonts, Radius } from '../../../src/theme';
 
-const BG      = '#C8CCE8';
-const BG_DARK = '#8B91C9';
-const INK     = '#1A1A4E';
+const BG      = '#d0eaec';
+const BG_DARK = '#18727d';
+const INK     = '#36312d';
 
-const EMOJIS = ['🍝','🍰','🥗','🥞','🍜','🍕','🍣','🥩','🥘','🍲','🍽'];
+type IconOption = {
+  iconName: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
+  emoji: string;
+  labelHe: string;
+  labelEn: string;
+  bg: string;
+  color: string;
+};
+
+const RECIPE_ICONS: IconOption[] = [
+  { iconName: 'noodles',               emoji: '🍝', labelHe: 'איטלקי',  labelEn: 'Italian',   bg: '#faeee3', color: '#c4622a' },
+  { iconName: 'cake-variant-outline',  emoji: '🍰', labelHe: 'קינוחים', labelEn: 'Desserts',  bg: '#f0dde6', color: '#9b4a6a' },
+  { iconName: 'leaf',                  emoji: '🥗', labelHe: 'סלטים',   labelEn: 'Salads',    bg: '#d0eaec', color: '#18727d' },
+  { iconName: 'egg-outline',           emoji: '🥞', labelHe: 'בוקר',    labelEn: 'Breakfast', bg: '#faeee3', color: '#c4622a' },
+  { iconName: 'bowl-mix-outline',      emoji: '🍜', labelHe: 'אסייתי',  labelEn: 'Asian',     bg: '#e5d5dc', color: '#9b4a6a' },
+  { iconName: 'pizza',                 emoji: '🍕', labelHe: 'פיצה',    labelEn: 'Pizza',     bg: '#faeee3', color: '#c4622a' },
+  { iconName: 'pot-steam-outline',     emoji: '🥘', labelHe: 'תבשיל',   labelEn: 'Stew',      bg: '#f5ede3', color: '#c4622a' },
+  { iconName: 'fish',                  emoji: '🐟', labelHe: 'דגים',    labelEn: 'Fish',      bg: '#d0eaec', color: '#18727d' },
+  { iconName: 'bread-slice-outline',   emoji: '🍞', labelHe: 'לחם',     labelEn: 'Bread',     bg: '#faeee3', color: '#c4622a' },
+  { iconName: 'glass-wine',            emoji: '🍷', labelHe: 'משקאות',  labelEn: 'Drinks',    bg: '#f0dde6', color: '#9b4a6a' },
+  { iconName: 'silverware-fork-knife', emoji: '🍽', labelHe: 'אחר',     labelEn: 'Other',     bg: '#f5ede3', color: '#36312d' },
+];
 
 type UnifiedTag = Category | 'vegan' | 'vegetarian' | 'glutenFree' | 'dairyFree';
 const CATEGORY_KEYS: Category[] = ['italian', 'desserts', 'salads', 'breakfast', 'asian', 'other'];
@@ -46,7 +68,15 @@ export default function EditRecipeScreen() {
   const [steps, setSteps] = useState<string[]>(
     (lang === 'he' ? recipe?.stepsHe : recipe?.stepsEn) ?? recipe?.steps ?? ['']
   );
-  const [emoji, setEmoji]       = useState(recipe?.emoji ?? '🍽');
+  const [selectedIcon, setSelectedIcon] = useState<IconOption>(
+    RECIPE_ICONS.find(o => o.emoji === recipe?.emoji) ?? RECIPE_ICONS[RECIPE_ICONS.length - 1]
+  );
+  const [coverUri, setCoverUri] = useState<string | null>(recipe?.sourceUri ?? null);
+
+  const pickCoverPhoto = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
+    if (!result.canceled) setCoverUri(result.assets[0].uri);
+  };
   const [prepTime, setPrepTime] = useState(recipe?.tags?.prepTime?.toString() ?? '');
   const [cookTime, setCookTime] = useState(recipe?.tags?.cookTime?.toString() ?? '');
   const [totalTime, setTotalTime] = useState(recipe?.tags?.totalTime?.toString() ?? '');
@@ -104,7 +134,7 @@ export default function EditRecipeScreen() {
       steps: filteredSteps,
       stepsHe: lang === 'he' ? filteredSteps : recipe.stepsHe ?? filteredSteps,
       stepsEn: lang === 'en' ? filteredSteps : recipe.stepsEn ?? filteredSteps,
-      tags, category, emoji,
+      tags, category, emoji: selectedIcon.emoji,
       customTags: customTags.filter(Boolean),
     };
     await updateRecipe(updated);
@@ -136,15 +166,25 @@ export default function EditRecipeScreen() {
           <View style={styles.header}>
             <View style={[styles.headerRow, { flexDirection: rowDir }]}>
 
-              {/* Emoji picker */}
-              <View style={styles.emojiPickerWrap}>
-                <View style={styles.heroEmoji}>
-                  <Text style={{ fontSize: 48 }}>{emoji}</Text>
-                </View>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.emojiStrip}>
-                  {EMOJIS.map(e => (
-                    <TouchableOpacity key={e} style={[styles.emojiOpt, emoji === e && styles.emojiOptActive]} onPress={() => setEmoji(e)}>
-                      <Text style={{ fontSize: 20 }}>{e}</Text>
+              {/* Illustrated icon picker */}
+              <View style={styles.iconPickerWrap}>
+                <TouchableOpacity style={[styles.heroIcon, { backgroundColor: selectedIcon.bg }]} onPress={pickCoverPhoto}>
+                  {coverUri
+                    ? <Image source={{ uri: coverUri }} style={styles.heroImage} />
+                    : <MaterialCommunityIcons name={selectedIcon.iconName} size={48} color={selectedIcon.color} />
+                  }
+                  <View style={styles.cameraOverlay}>
+                    <MaterialCommunityIcons name="camera-plus-outline" size={14} color="#fff" />
+                  </View>
+                </TouchableOpacity>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.iconStrip}>
+                  {RECIPE_ICONS.map(opt => (
+                    <TouchableOpacity
+                      key={opt.iconName}
+                      style={[styles.iconOpt, { backgroundColor: opt.bg }, selectedIcon.iconName === opt.iconName && styles.iconOptActive]}
+                      onPress={() => { setSelectedIcon(opt); setCoverUri(null); }}
+                    >
+                      <MaterialCommunityIcons name={opt.iconName} size={20} color={opt.color} />
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
@@ -157,7 +197,7 @@ export default function EditRecipeScreen() {
                   value={title}
                   onChangeText={setTitle}
                   placeholder={lang === 'he' ? 'שם המתכון' : 'Recipe name'}
-                  placeholderTextColor="rgba(26,26,78,0.4)"
+                  placeholderTextColor="rgba(54,49,45,0.4)"
                   multiline
                 />
 
@@ -171,7 +211,7 @@ export default function EditRecipeScreen() {
                       onChangeText={setPrepTime}
                       keyboardType="number-pad"
                       placeholder={lang === 'he' ? 'הכנה' : 'Prep'}
-                      placeholderTextColor="rgba(26,26,78,0.4)"
+                      placeholderTextColor="rgba(54,49,45,0.4)"
                       textAlign="center"
                     />
                   </View>
@@ -183,7 +223,7 @@ export default function EditRecipeScreen() {
                       onChangeText={setCookTime}
                       keyboardType="number-pad"
                       placeholder={lang === 'he' ? 'בישול' : 'Cook'}
-                      placeholderTextColor="rgba(26,26,78,0.4)"
+                      placeholderTextColor="rgba(54,49,45,0.4)"
                       textAlign="center"
                     />
                   </View>
@@ -195,7 +235,7 @@ export default function EditRecipeScreen() {
                       onChangeText={setTotalTime}
                       keyboardType="number-pad"
                       placeholder={lang === 'he' ? 'סה"כ' : 'Total'}
-                      placeholderTextColor="rgba(26,26,78,0.4)"
+                      placeholderTextColor="rgba(54,49,45,0.4)"
                       textAlign="center"
                     />
                   </View>
@@ -219,7 +259,7 @@ export default function EditRecipeScreen() {
                   value={ing}
                   onChangeText={v => updateIng(i, v)}
                   placeholder={t('ingredientPlaceholder')}
-                  placeholderTextColor="rgba(26,26,78,0.35)"
+                  placeholderTextColor="rgba(54,49,45,0.35)"
                 />
                 {ingredients.length > 1 && (
                   <TouchableOpacity onPress={() => removeIng(i)} style={styles.removeBtn}>
@@ -250,7 +290,7 @@ export default function EditRecipeScreen() {
                   onChangeText={v => updateStep(i, v)}
                   multiline
                   placeholder={`${lang === 'he' ? 'שלב' : 'Step'} ${i + 1}`}
-                  placeholderTextColor="rgba(26,26,78,0.35)"
+                  placeholderTextColor="rgba(54,49,45,0.35)"
                 />
                 {steps.length > 1 && (
                   <TouchableOpacity onPress={() => removeStep(i)} style={styles.removeBtn}>
@@ -280,7 +320,7 @@ export default function EditRecipeScreen() {
                     style={[styles.tagChip, active && styles.tagChipActive]}
                     onPress={() => toggleTag(key)}
                   >
-                    <MaterialCommunityIcons name={icon} size={15} color={active ? '#fff' : 'rgba(26,26,78,0.6)'} />
+                    <MaterialCommunityIcons name={icon} size={15} color={active ? '#fff' : 'rgba(54,49,45,0.6)'} />
                     <Text style={[styles.tagChipText, active && styles.tagChipTextActive]}>
                       {t(key as any)}
                     </Text>
@@ -291,7 +331,7 @@ export default function EditRecipeScreen() {
               {customTags.map(tag => (
                 <TouchableOpacity key={tag} style={styles.customTagChip} onPress={() => removeCustomTag(tag)}>
                   <Text style={styles.customTagText}>{tag}</Text>
-                  <MaterialCommunityIcons name="close-circle" size={14} color="rgba(26,26,78,0.5)" />
+                  <MaterialCommunityIcons name="close-circle" size={14} color="rgba(54,49,45,0.5)" />
                 </TouchableOpacity>
               ))}
             </View>
@@ -302,7 +342,7 @@ export default function EditRecipeScreen() {
                 value={customTagInput}
                 onChangeText={setCustomTagInput}
                 placeholder={lang === 'he' ? 'תגית חופשית...' : 'Custom tag...'}
-                placeholderTextColor="rgba(26,26,78,0.35)"
+                placeholderTextColor="rgba(54,49,45,0.35)"
                 onSubmitEditing={addCustomTag}
                 returnKeyType="done"
                 blurOnSubmit={false}
@@ -342,21 +382,24 @@ const styles = StyleSheet.create({
   // Header
   header: { padding: 20, paddingBottom: 24 },
   headerRow: { alignItems: 'flex-start', gap: 16 },
-  emojiPickerWrap: { flexShrink: 0, alignItems: 'center', gap: 8 },
-  heroEmoji: {
-    width: 120, height: 100, borderRadius: Radius.lg,
-    backgroundColor: 'rgba(255,255,255,0.5)',
+  iconPickerWrap: { flexShrink: 0, alignItems: 'center', gap: 8 },
+  heroIcon: {
+    width: 110, height: 110, borderRadius: Radius.xl,
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 2, borderColor: 'rgba(255,255,255,0.8)',
+    borderWidth: 3, borderColor: 'rgba(255,255,255,0.8)', overflow: 'hidden',
   },
-  emojiStrip: { maxWidth: 120 },
-  emojiOpt: {
+  heroImage: { width: '100%', height: '100%' },
+  cameraOverlay: {
+    position: 'absolute', bottom: 6, right: 6,
+    backgroundColor: 'rgba(54,49,45,0.5)', borderRadius: 10, padding: 4,
+  },
+  iconStrip: { maxWidth: 110 },
+  iconOpt: {
     width: 34, height: 34, borderRadius: Radius.md,
-    backgroundColor: 'rgba(255,255,255,0.4)',
-    borderWidth: 1.5, borderColor: 'transparent',
+    borderWidth: 2, borderColor: 'transparent',
     alignItems: 'center', justifyContent: 'center', marginRight: 4,
   },
-  emojiOptActive: { borderColor: INK, backgroundColor: 'rgba(255,255,255,0.7)' },
+  iconOptActive: { borderColor: INK },
 
   titleInput: {
     fontFamily: Fonts.dybbuk,
@@ -365,7 +408,7 @@ const styles = StyleSheet.create({
     lineHeight: 34,
     marginBottom: 14,
     borderBottomWidth: 1.5,
-    borderBottomColor: 'rgba(26,26,78,0.25)',
+    borderBottomColor: 'rgba(54,49,45,0.25)',
     paddingBottom: 6,
   },
 
@@ -374,7 +417,7 @@ const styles = StyleSheet.create({
   timeItem: { alignItems: 'center', gap: 4 },
   timeInput: {
     fontFamily: Fonts.dybbuk, fontSize: 13, color: INK,
-    borderBottomWidth: 1, borderBottomColor: 'rgba(26,26,78,0.25)',
+    borderBottomWidth: 1, borderBottomColor: 'rgba(54,49,45,0.25)',
     paddingVertical: 2, width: 60,
   },
 
@@ -394,13 +437,13 @@ const styles = StyleSheet.create({
 
   // Ingredients / steps
   ingRow: {
-    borderBottomWidth: 1, borderBottomColor: 'rgba(26,26,78,0.2)',
+    borderBottomWidth: 1, borderBottomColor: 'rgba(54,49,45,0.2)',
     paddingVertical: 6, alignItems: 'center', gap: 10,
   },
   ingHeart: { fontFamily: Fonts.dybbuk, fontSize: 16, color: BG_DARK, flexShrink: 0 },
   ingInput: {
     fontFamily: Fonts.dybbuk, fontSize: 15, color: INK, lineHeight: 20,
-    borderBottomWidth: 1, borderBottomColor: 'rgba(26,26,78,0.15)',
+    borderBottomWidth: 1, borderBottomColor: 'rgba(54,49,45,0.15)',
     paddingVertical: 4,
   },
   stepRow: { paddingVertical: 6, alignItems: 'flex-start', gap: 10 },
@@ -413,7 +456,7 @@ const styles = StyleSheet.create({
   tagGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tagChip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    borderWidth: 1.5, borderColor: 'rgba(26,26,78,0.3)',
+    borderWidth: 1.5, borderColor: 'rgba(54,49,45,0.3)',
     borderRadius: Radius.pill, paddingHorizontal: 12, paddingVertical: 7,
     backgroundColor: 'rgba(255,255,255,0.4)',
   },
@@ -422,7 +465,7 @@ const styles = StyleSheet.create({
   tagChipTextActive: { color: '#fff' },
   customTagChip: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: 'rgba(139,145,201,0.25)', borderRadius: Radius.pill,
+    backgroundColor: 'rgba(24,114,125,0.12)', borderRadius: Radius.pill,
     borderWidth: 1.5, borderColor: BG_DARK,
     paddingHorizontal: 12, paddingVertical: 7,
   },
@@ -431,7 +474,7 @@ const styles = StyleSheet.create({
   customTagInput: {
     fontFamily: Fonts.dybbuk, fontSize: 14, color: INK,
     backgroundColor: 'rgba(255,255,255,0.5)', borderRadius: Radius.pill,
-    borderWidth: 1.5, borderColor: 'rgba(26,26,78,0.2)',
+    borderWidth: 1.5, borderColor: 'rgba(54,49,45,0.2)',
     paddingHorizontal: 14, paddingVertical: 8,
   },
   customTagAddBtn: {

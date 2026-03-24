@@ -5,7 +5,7 @@ export type Lang = 'he' | 'en';
 export const translations = {
   he: {
     // App
-    appName: 'ניבל',
+    appName: '2Spoons',
     // Home
     homeGreeting: 'שלום, שף! 👋',
     homeTitle: 'ספר המתכונים שלי',
@@ -40,7 +40,7 @@ export const translations = {
     typeManually: '✏️ הזן ידנית',
     // Album scan
     scanAlbum: 'סרוק אלבום תמונות',
-    scanAlbumDesc: 'ניבל יסרוק את התמונות שלך ויחפש צילומי מסך של מתכונים',
+    scanAlbumDesc: '2Spoons יסרוק את התמונות שלך ויחפש צילומי מסך של מתכונים',
     startScan: 'התחל סריקה',
     scanning: 'סורק...',
     scanningAlbum: 'מחפש מתכונים באלבום...',
@@ -49,7 +49,7 @@ export const translations = {
     noRecipesFound: 'לא נמצאו מתכונים בתמונות',
     // AI Scan
     aiReading: 'ה-AI קורא את המתכון...',
-    aiSub: 'ניבל מחלץ מצרכים ושלבים',
+    aiSub: '2Spoons מחלץ מצרכים ושלבים',
     recipeAdded: '🎉 המתכון נוסף!',
     // Screenshot
     looksLikeRecipe: 'נראה כמו מתכון!',
@@ -104,11 +104,11 @@ export const translations = {
     servings: 'מנות',
     comingSoon: 'בקרוב!',
     permissionRequired: 'נדרשת הרשאה',
-    permissionMessage: 'ניבל צריך גישה לאלבום התמונות שלך כדי לסרוק מתכונים.',
+    permissionMessage: '2Spoons צריך גישה לאלבום התמונות שלך כדי לסרוק מתכונים.',
     openSettings: 'פתח הגדרות',
   },
   en: {
-    appName: 'Nibble',
+    appName: '2Spoons',
     homeGreeting: 'Hello, Chef! 👋',
     homeTitle: 'My Recipe Book',
     recipes: 'Recipes',
@@ -137,7 +137,7 @@ export const translations = {
     saveVideoLink: '▶ Save a video link',
     typeManually: '✏️ Type manually',
     scanAlbum: 'Scan Photo Album',
-    scanAlbumDesc: 'Nibble will scan your photos looking for recipe screenshots',
+    scanAlbumDesc: '2Spoons will scan your photos looking for recipe screenshots',
     startScan: 'Start Scan',
     scanning: 'Scanning...',
     scanningAlbum: 'Looking for recipes in your album...',
@@ -145,10 +145,10 @@ export const translations = {
     addSelected: 'Add Selected',
     noRecipesFound: 'No recipes found in your photos',
     aiReading: 'AI is reading your recipe…',
-    aiSub: 'Nibble is extracting ingredients and steps',
+    aiSub: '2Spoons is extracting ingredients and steps',
     recipeAdded: '🎉 Recipe added!',
     looksLikeRecipe: 'Looks like a recipe!',
-    screenshotPrompt: 'Want to add this screenshot to your Nibble recipe book?',
+    screenshotPrompt: 'Want to add this screenshot to your 2Spoons recipe book?',
     yesAdd: 'Yes, add it! 🎉',
     notNow: 'Not now',
     saveVideo: 'Save a Video 🎬',
@@ -194,7 +194,7 @@ export const translations = {
     servings: 'servings',
     comingSoon: 'Coming soon!',
     permissionRequired: 'Permission Required',
-    permissionMessage: 'Nibble needs access to your photo library to scan for recipes.',
+    permissionMessage: '2Spoons needs access to your photo library to scan for recipes.',
     openSettings: 'Open Settings',
   },
 };

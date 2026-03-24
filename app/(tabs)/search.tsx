@@ -141,7 +141,7 @@ export default function SearchScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.cream },
   searchBar: {
-    backgroundColor: Colors.sun, flexDirection: 'row', alignItems: 'center',
+    backgroundColor: Colors.mauve, flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 16, paddingVertical: 12, gap: 10,
   },
   searchIcon: { fontSize: 16 },

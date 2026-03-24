@@ -18,7 +18,7 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       {/* TOP BAR */}
       <View style={[styles.topBar, { flexDirection: rowDir }]}>
-        <Text style={styles.logo}>nib<Text style={styles.logoAccent}>ble</Text></Text>
+        <Text style={styles.logo}>2<Text style={styles.logoAccent}>Spoons</Text></Text>
         <TouchableOpacity
           style={styles.langToggle}
           onPress={() => setLang(lang === 'he' ? 'en' : 'he')}
@@ -29,7 +29,7 @@ export default function HomeScreen() {
 
       <View style={styles.content}>
         {/* TITLE */}
-        <Text style={[styles.heroTitle, { textAlign: isRTL ? 'right' : 'left', fontFamily: fontHe }]}>
+        <Text style={[styles.heroTitle, { fontFamily: fontHe }]}>
           {t('homeTitle')}
         </Text>
 
@@ -41,12 +41,9 @@ export default function HomeScreen() {
             onPress={() => router.push('/add-recipe')}
             activeOpacity={0.85}
           >
-            <MaterialCommunityIcons name="chef-hat" size={36} color="#fff" style={styles.mainBtnIcon} />
+            <MaterialCommunityIcons name="chef-hat" size={40} color="#fff" style={styles.mainBtnIcon} />
             <Text style={[styles.mainBtnLabel, { textAlign: 'center', fontFamily: fontHe }]}>
-              {t('addRecipe')}
-            </Text>
-            <Text style={[styles.mainBtnSub, { textAlign: 'center', fontFamily: fontHe }]}>
-              {t('addChoose')}
+              {lang === 'he' ? 'הוסף מתכון' : 'Add Recipe'}
             </Text>
           </TouchableOpacity>
 
@@ -56,12 +53,9 @@ export default function HomeScreen() {
             onPress={() => router.push('/collection')}
             activeOpacity={0.85}
           >
-            <MaterialCommunityIcons name="book-open-page-variant-outline" size={36} color={Colors.text} style={styles.mainBtnIcon} />
-            <Text style={[styles.mainBtnLabel, styles.mainBtnLabelDark, { textAlign: 'center', fontFamily: fontHe }]}>
+            <MaterialCommunityIcons name="book-open-page-variant-outline" size={40} color="#fff" style={styles.mainBtnIcon} />
+            <Text style={[styles.mainBtnLabel, { textAlign: 'center', fontFamily: fontHe }]}>
               {t('myCollection')}
-            </Text>
-            <Text style={[styles.mainBtnSub, styles.mainBtnSubDark, { textAlign: 'center', fontFamily: fontHe }]}>
-              {recipes.length} {t('recipes')}
             </Text>
           </TouchableOpacity>
         </View>
@@ -73,7 +67,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.cream },
   topBar: {
-    backgroundColor: Colors.sun, alignItems: 'center',
+    backgroundColor: Colors.mauve, alignItems: 'center',
     justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14,
   },
   logo: { fontSize: 26, fontWeight: '700', color: '#fff', letterSpacing: -0.5 },
@@ -83,8 +77,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 6,
   },
   langText: { color: '#fff', fontWeight: '700', fontSize: 13 },
-  content: { flex: 1, padding: 20, gap: 16, justifyContent: 'center' },
-  heroTitle: { fontSize: 28, fontWeight: '700', color: Colors.text, marginBottom: 8 },
+  content: { flex: 1, padding: 24, paddingTop: 48, gap: 20 },
+  heroTitle: { fontSize: 32, fontWeight: '700', color: Colors.text, textAlign: 'center', marginBottom: 8 },
 
   btnRow: { gap: 14 },
   mainBtn: {
@@ -92,11 +86,8 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   mainBtnOutline: {
-    backgroundColor: Colors.card, borderWidth: 1.5, borderColor: Colors.border,
+    backgroundColor: '#18727d', borderWidth: 0,
   },
   mainBtnIcon: { marginBottom: 10 },
-  mainBtnLabel: { fontSize: 16, fontWeight: '700', color: '#fff', marginBottom: 3 },
-  mainBtnLabelDark: { color: Colors.text },
-  mainBtnSub: { fontSize: 12, color: 'rgba(255,255,255,0.8)' },
-  mainBtnSubDark: { color: Colors.text3 },
+  mainBtnLabel: { fontSize: 17, fontWeight: '700', color: '#fff' },
 });

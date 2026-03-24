@@ -25,7 +25,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const [lang, setLangState] = useState<Lang>('he');
 
   useEffect(() => {
-    AsyncStorage.getItem('nibble_lang').then((saved) => {
+    AsyncStorage.getItem('2spoons_lang').then((saved) => {
       const l: Lang = (saved === 'en' || saved === 'he') ? saved : 'he';
       setLangState(l);
       I18nManager.forceRTL(l === 'he');
@@ -34,7 +34,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
 
   const setLang = async (l: Lang) => {
     setLangState(l);
-    await AsyncStorage.setItem('nibble_lang', l);
+    await AsyncStorage.setItem('2spoons_lang', l);
     I18nManager.forceRTL(l === 'he');
   };
 

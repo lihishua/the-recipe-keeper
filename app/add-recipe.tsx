@@ -1,8 +1,8 @@
 // app/add-recipe.tsx
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  Modal, Alert, ActivityIndicator,
+  Modal, Alert, ActivityIndicator, Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -17,40 +17,80 @@ export default function AddRecipeScreen() {
   const { t, lang, isRTL, fontHe } = useLang();
   const { addRecipe } = useRecipes();
   const [scanning, setScanning] = useState(false);
-  const [scanExpanded, setScanExpanded] = useState(false);
+  const [photoExpanded, setPhotoExpanded] = useState(false);
 
   const rowDir = isRTL ? 'row-reverse' : 'row';
 
-  const handlePhoto = async () => {
+  // Cooking pot animation
+  const potRock = useRef(new Animated.Value(0)).current;
+  const potBounce = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!scanning) return;
+    potRock.setValue(0);
+    potBounce.setValue(0);
+
+    const rock = Animated.loop(
+      Animated.sequence([
+        Animated.timing(potRock, { toValue: 1, duration: 280, useNativeDriver: true }),
+        Animated.timing(potRock, { toValue: -1, duration: 560, useNativeDriver: true }),
+        Animated.timing(potRock, { toValue: 0, duration: 280, useNativeDriver: true }),
+        Animated.delay(500),
+      ])
+    );
+    const bounce = Animated.loop(
+      Animated.sequence([
+        Animated.timing(potBounce, { toValue: -5, duration: 350, useNativeDriver: true }),
+        Animated.timing(potBounce, { toValue: 0, duration: 350, useNativeDriver: true }),
+        Animated.delay(400),
+      ])
+    );
+    rock.start();
+    bounce.start();
+    return () => { rock.stop(); bounce.stop(); };
+  }, [scanning]);
+
+  const rotate = potRock.interpolate({ inputRange: [-1, 0, 1], outputRange: ['-10deg', '0deg', '10deg'] });
+
+  const handlePickPhoto = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 0.8,
       base64: true,
     });
     if (result.canceled) return;
+    await processImage(result.assets[0]);
+  };
 
+  const handleTakePhoto = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert(lang === 'he' ? 'נדרשת הרשאה' : 'Permission required', lang === 'he' ? 'נא לאפשר גישה למצלמה' : 'Please allow camera access');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({ quality: 0.8, base64: true });
+    if (result.canceled) return;
+    await processImage(result.assets[0]);
+  };
+
+  const processImage = async (asset: ImagePicker.ImagePickerAsset) => {
+    setPhotoExpanded(false);
     setScanning(true);
     try {
-      const asset = result.assets[0];
-      const uri = asset.uri;
-      // Use picker-provided base64 to avoid ph:// URI issues on iOS
       const precomputed = asset.base64
-        ? { base64: asset.base64, mediaType: (asset.mimeType ?? 'image/jpeg') }
+        ? { base64: asset.base64, mediaType: asset.mimeType ?? 'image/jpeg' }
         : undefined;
       let extracted: Awaited<ReturnType<typeof extractRecipeFromImage>>;
       try {
-        extracted = await extractRecipeFromImage(uri, precomputed);
+        extracted = await extractRecipeFromImage(asset.uri, precomputed);
       } catch (apiErr: any) {
-        Alert.alert(
-          lang === 'he' ? 'שגיאת API' : 'API Error',
-          apiErr?.message ?? (lang === 'he' ? 'שגיאה לא ידועה' : 'Unknown error'),
-        );
+        Alert.alert(lang === 'he' ? 'שגיאת API' : 'API Error', apiErr?.message ?? '');
         return;
       }
       if (!extracted) {
         Alert.alert(
           lang === 'he' ? 'לא זוהה מתכון' : 'No recipe found',
-          lang === 'he' ? 'לא הצלחנו לזהות מתכון בתמונה זו. נסה תמונה אחרת.' : 'Could not detect a recipe in this image. Try another one.',
+          lang === 'he' ? 'לא הצלחנו לזהות מתכון בתמונה זו.' : 'Could not detect a recipe in this image.',
         );
         return;
       }
@@ -69,7 +109,7 @@ export default function AddRecipeScreen() {
         category: extracted.category ?? 'other',
         emoji: extracted.emoji ?? '🍽',
         sourceType: 'photo',
-        sourceUri: uri,
+        sourceUri: asset.uri,
         createdAt: Date.now(),
       };
       await addRecipe(recipe);
@@ -88,104 +128,92 @@ export default function AddRecipeScreen() {
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Text style={styles.backText}>{isRTL ? '›' : '‹'}</Text>
         </TouchableOpacity>
-        <Text style={[styles.topTitle, { fontFamily: fontHe }]}>{t('addRecipe')}</Text>
+        <Text style={[styles.topTitle, { fontFamily: fontHe }]}>
+          {lang === 'he' ? 'הוסף מתכון' : 'Add Recipe'}
+        </Text>
         <View style={{ width: 36 }} />
       </View>
 
       <View style={styles.content}>
 
-        {/* ── OPTION 1: Pick a photo ── */}
-        <TouchableOpacity style={styles.card} onPress={handlePhoto} activeOpacity={0.85}>
-          <View style={[styles.cardInner, { flexDirection: rowDir }]}>
-            <View style={[styles.iconBox, { backgroundColor: '#FFF3E0' }]}>
-              <MaterialCommunityIcons name="image-outline" size={28} color={Colors.sun} />
-            </View>
-            <View style={styles.textWrap}>
-              <Text style={[styles.cardTitle, { textAlign: isRTL ? 'right' : 'left', fontFamily: fontHe }]}>
-                {lang === 'he' ? 'בחר תמונה' : 'Pick a Photo'}
-              </Text>
-              <Text style={[styles.cardSub, { textAlign: isRTL ? 'right' : 'left' }]}>
-                {lang === 'he'
-                  ? 'פתח את הגלריה ובחר תמונה של מתכון'
-                  : 'Open your gallery and pick a recipe image'}
-              </Text>
-            </View>
-            <Text style={styles.cardArrow}>{isRTL ? '‹' : '›'}</Text>
-          </View>
-        </TouchableOpacity>
+        {/* ── 2 MAIN BUTTONS ── */}
+        <View style={[styles.btnRow, { flexDirection: rowDir }]}>
 
-        {/* ── OPTION 2: Scan my photos ── */}
-        <TouchableOpacity
-          style={styles.card}
-          onPress={() => setScanExpanded(v => !v)}
-          activeOpacity={0.85}
-        >
-          <View style={[styles.cardInner, { flexDirection: rowDir }]}>
-            <View style={[styles.iconBox, { backgroundColor: '#E8F5E9' }]}>
-              <MaterialCommunityIcons name="image-search-outline" size={28} color="#388E3C" />
-            </View>
-            <View style={styles.textWrap}>
-              <Text style={[styles.cardTitle, { textAlign: isRTL ? 'right' : 'left', fontFamily: fontHe }]}>
-                {lang === 'he' ? 'סרוק את התמונות שלי' : 'Scan My Photos'}
-              </Text>
-              <Text style={[styles.cardSub, { textAlign: isRTL ? 'right' : 'left' }]}>
-                {lang === 'he'
-                  ? 'ניבל יחפש מתכונים בתמונות שלך אוטומטית'
-                  : 'Nibble scans your photos automatically'}
-              </Text>
-            </View>
-            <Text style={[styles.cardArrow, scanExpanded && styles.cardArrowDown]}>
-              {isRTL ? '‹' : '›'}
+          {/* מתכון מתמונה */}
+          <TouchableOpacity
+            style={[styles.mainBtn, { backgroundColor: Colors.sun }]}
+            onPress={() => setPhotoExpanded(v => !v)}
+            activeOpacity={0.85}
+          >
+            <MaterialCommunityIcons name="camera-outline" size={40} color="#fff" />
+            <Text style={[styles.mainBtnLabel, { fontFamily: fontHe }]}>
+              {lang === 'he' ? 'מתכון מתמונה' : 'From Photo'}
             </Text>
-          </View>
+          </TouchableOpacity>
 
-          {scanExpanded && (
-            <View style={[styles.scanChoiceRow, { flexDirection: rowDir }]}>
-              <TouchableOpacity
-                style={styles.scanChoiceBtn}
-                onPress={() => { setScanExpanded(false); router.push('/scan/album'); }}
-              >
-                <MaterialCommunityIcons name="view-gallery-outline" size={22} color={Colors.sun} />
-                <Text style={styles.scanChoiceText}>
-                  {lang === 'he' ? 'כל התמונות' : 'All Photos'}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.scanChoiceBtn}
-                onPress={() => { setScanExpanded(false); router.push('/scan/album'); }}
-              >
-                <MaterialCommunityIcons name="cellphone-screenshot" size={22} color={Colors.sun} />
-                <Text style={styles.scanChoiceText}>
-                  {lang === 'he' ? 'צילומי מסך' : 'Screenshots'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </TouchableOpacity>
+          {/* הוסף ידנית */}
+          <TouchableOpacity
+            style={[styles.mainBtn, { backgroundColor: '#18727d' }]}
+            onPress={() => router.push('/recipe/add')}
+            activeOpacity={0.85}
+          >
+            <MaterialCommunityIcons name="pencil-outline" size={40} color="#fff" />
+            <Text style={[styles.mainBtnLabel, { fontFamily: fontHe }]}>
+              {lang === 'he' ? 'הוסף ידנית' : 'Add Manually'}
+            </Text>
+          </TouchableOpacity>
 
-        {/* ── OPTION 3: Add manually ── */}
-        <TouchableOpacity
-          style={styles.card}
-          onPress={() => router.push('/recipe/add')}
-          activeOpacity={0.85}
-        >
-          <View style={[styles.cardInner, { flexDirection: rowDir }]}>
-            <View style={[styles.iconBox, { backgroundColor: '#E3F2FD' }]}>
-              <MaterialCommunityIcons name="pencil-outline" size={28} color="#1976D2" />
-            </View>
-            <View style={styles.textWrap}>
-              <Text style={[styles.cardTitle, { textAlign: isRTL ? 'right' : 'left', fontFamily: fontHe }]}>
-                {lang === 'he' ? 'הזן ידנית' : 'Add Manually'}
-              </Text>
-              <Text style={[styles.cardSub, { textAlign: isRTL ? 'right' : 'left' }]}>
-                {lang === 'he'
-                  ? 'תבנית עם שדות מוארים — כל שדה מחכה לך'
-                  : 'Highlighted template — fill in each field'}
-              </Text>
-            </View>
-            <Text style={styles.cardArrow}>{isRTL ? '‹' : '›'}</Text>
+        </View>
+
+        {/* ── PHOTO SUB-OPTIONS ── */}
+        {photoExpanded && (
+          <View style={styles.subOptions}>
+            <TouchableOpacity style={[styles.subBtn, { flexDirection: rowDir }]} onPress={handlePickPhoto}>
+              <View style={[styles.subIcon, { backgroundColor: '#faeee3' }]}>
+                <MaterialCommunityIcons name="image-outline" size={24} color={Colors.sun} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.subTitle, { textAlign: isRTL ? 'right' : 'left', fontFamily: fontHe }]}>
+                  {lang === 'he' ? 'בחר מהגלריה' : 'Choose from Gallery'}
+                </Text>
+                <Text style={[styles.subDesc, { textAlign: isRTL ? 'right' : 'left' }]}>
+                  {lang === 'he' ? 'בחר תמונה אחת' : 'Pick a single image'}
+                </Text>
+              </View>
+              <Text style={styles.subArrow}>{isRTL ? '‹' : '›'}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.subBtn, { flexDirection: rowDir }]} onPress={() => { setPhotoExpanded(false); router.push('/scan/album'); }}>
+              <View style={[styles.subIcon, { backgroundColor: '#d0eaec' }]}>
+                <MaterialCommunityIcons name="image-search-outline" size={24} color="#18727d" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.subTitle, { textAlign: isRTL ? 'right' : 'left', fontFamily: fontHe }]}>
+                  {lang === 'he' ? 'סרוק את הגלריה' : 'Scan Gallery'}
+                </Text>
+                <Text style={[styles.subDesc, { textAlign: isRTL ? 'right' : 'left' }]}>
+                  {lang === 'he' ? 'סריקה אוטומטית של 200 תמונות אחרונות' : 'Auto-scan your 200 most recent photos'}
+                </Text>
+              </View>
+              <Text style={styles.subArrow}>{isRTL ? '‹' : '›'}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.subBtn, { flexDirection: rowDir }]} onPress={handleTakePhoto}>
+              <View style={[styles.subIcon, { backgroundColor: '#f0dde6' }]}>
+                <MaterialCommunityIcons name="camera" size={24} color="#9b4a6a" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.subTitle, { textAlign: isRTL ? 'right' : 'left', fontFamily: fontHe }]}>
+                  {lang === 'he' ? 'צלם עכשיו' : 'Take a Photo'}
+                </Text>
+                <Text style={[styles.subDesc, { textAlign: isRTL ? 'right' : 'left' }]}>
+                  {lang === 'he' ? 'צלם את המתכון עם המצלמה' : 'Photograph the recipe with your camera'}
+                </Text>
+              </View>
+              <Text style={styles.subArrow}>{isRTL ? '‹' : '›'}</Text>
+            </TouchableOpacity>
           </View>
-        </TouchableOpacity>
+        )}
 
       </View>
 
@@ -193,7 +221,9 @@ export default function AddRecipeScreen() {
       <Modal visible={scanning} transparent animationType="fade">
         <View style={styles.scanOverlay}>
           <View style={styles.scanBox}>
-            <MaterialCommunityIcons name="robot-outline" size={48} color={Colors.sun} style={{ marginBottom: 12 }} />
+            <Animated.View style={{ transform: [{ rotate }, { translateY: potBounce }], marginBottom: 12 }}>
+              <MaterialCommunityIcons name="pot-steam" size={56} color={Colors.sun} />
+            </Animated.View>
             <Text style={styles.scanTitle}>{t('aiReading')}</Text>
             <Text style={styles.scanSub}>{t('aiSub')}</Text>
             <ActivityIndicator color={Colors.sun} size="large" style={{ marginTop: 16 }} />
@@ -207,7 +237,7 @@ export default function AddRecipeScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.cream },
   topBar: {
-    backgroundColor: Colors.sun, alignItems: 'center',
+    backgroundColor: Colors.mauve, alignItems: 'center',
     justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12,
   },
   backBtn: {
@@ -216,34 +246,30 @@ const styles = StyleSheet.create({
   },
   backText: { color: '#fff', fontSize: 22, lineHeight: 26 },
   topTitle: { color: '#fff', fontSize: 20, fontWeight: '700' },
-  content: { flex: 1, padding: 20, gap: 16 },
 
-  // Option card
-  card: {
-    backgroundColor: Colors.card, borderRadius: Radius.xl,
-    borderWidth: 1.5, borderColor: Colors.border, ...Shadow.sm, overflow: 'hidden',
-  },
-  cardInner: { padding: 20, alignItems: 'center', gap: 16 },
-  iconBox: { width: 58, height: 58, borderRadius: Radius.lg, alignItems: 'center', justifyContent: 'center' },
-  textWrap: { flex: 1 },
-  cardTitle: { fontSize: 17, fontWeight: '700', color: Colors.text, marginBottom: 4 },
-  cardSub: { fontSize: 13, color: Colors.text3, lineHeight: 18 },
-  cardArrow: { fontSize: 20, color: Colors.text3 },
-  cardArrowDown: { transform: [{ rotate: '90deg' }] },
+  content: { flex: 1, padding: 24, paddingTop: 32, gap: 20 },
 
-  // Scan sub-choice
-  scanChoiceRow: {
-    borderTopWidth: 1, borderTopColor: Colors.border,
-    padding: 14, gap: 12,
+  btnRow: { gap: 16 },
+  mainBtn: {
+    flex: 1, borderRadius: Radius.xl, padding: 28,
+    alignItems: 'center', justifyContent: 'center', gap: 12, ...Shadow.md,
   },
-  scanChoiceBtn: {
-    flex: 1, backgroundColor: Colors.sunLighter, borderRadius: Radius.lg,
-    paddingVertical: 14, alignItems: 'center', gap: 6,
+  mainBtnLabel: { fontSize: 17, fontWeight: '700', color: '#fff', textAlign: 'center' },
+
+  // Sub-options
+  subOptions: { gap: 10 },
+  subBtn: {
+    backgroundColor: Colors.card, borderRadius: Radius.lg,
+    borderWidth: 1.5, borderColor: Colors.border,
+    padding: 14, alignItems: 'center', gap: 14, ...Shadow.sm,
   },
-  scanChoiceText: { fontSize: 13, fontWeight: '700', color: Colors.sun },
+  subIcon: { width: 48, height: 48, borderRadius: Radius.md, alignItems: 'center', justifyContent: 'center' },
+  subTitle: { fontSize: 15, fontWeight: '700', color: Colors.text, marginBottom: 2 },
+  subDesc: { fontSize: 12, color: Colors.text3, lineHeight: 16 },
+  subArrow: { fontSize: 18, color: Colors.text3 },
 
   // AI overlay
-  scanOverlay: { flex: 1, backgroundColor: 'rgba(45,27,0,0.5)', justifyContent: 'center', alignItems: 'center' },
+  scanOverlay: { flex: 1, backgroundColor: 'rgba(54,49,45,0.6)', justifyContent: 'center', alignItems: 'center' },
   scanBox: { backgroundColor: '#fff', borderRadius: Radius.xl, padding: 32, alignItems: 'center', margin: 32 },
   scanTitle: { fontSize: 18, fontWeight: '700', color: Colors.text, marginBottom: 6 },
   scanSub: { fontSize: 14, color: Colors.text2, textAlign: 'center' },

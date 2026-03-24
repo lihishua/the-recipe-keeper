@@ -85,8 +85,8 @@ export default function AlbumScanScreen() {
           </TouchableOpacity>
           <Text style={styles.idleNote}>
             {lang === 'he'
-              ? 'ניבל יסרוק עד 200 תמונות אחרונות. כל מתכון שיזוהה יוצג לאישורך לפני שמירה.'
-              : 'Nibble will scan your 200 most recent photos. Every detected recipe will be shown for your approval before saving.'}
+              ? '2Spoons יסרוק עד 200 תמונות אחרונות. כל מתכון שיזוהה יוצג לאישורך לפני שמירה.'
+              : '2Spoons will scan your 200 most recent photos. Every detected recipe will be shown for your approval before saving.'}
           </Text>
         </View>
       </SafeAreaView>
@@ -242,7 +242,7 @@ export default function AlbumScanScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.cream },
   topBar: {
-    backgroundColor: Colors.sun, flexDirection: 'row', alignItems: 'center',
+    backgroundColor: Colors.mauve, flexDirection: 'row', alignItems: 'center',
     justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, gap: 12,
   },
   backBtn: {

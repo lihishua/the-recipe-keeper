@@ -11,9 +11,9 @@ import { useLang } from '../../src/context/LanguageContext';
 import { useRecipes } from '../../src/context/RecipeContext';
 import { Colors, Fonts, Radius } from '../../src/theme';
 
-const BG = '#C8CCE8';         // lavender background
-const BG_DARK = '#8B91C9';    // darker lavender for topbar
-const INK = '#1A1A4E';        // dark navy text
+const BG = '#d0eaec';         // light teal background
+const BG_DARK = '#18727d';    // teal topbar
+const INK = '#36312d';        // dark brown text
 
 export default function RecipeDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -242,7 +242,7 @@ const styles = StyleSheet.create({
   // Ingredients
   ingRow: {
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(26,26,78,0.2)',
+    borderBottomColor: 'rgba(54,49,45,0.2)',
     paddingVertical: 10,
     alignItems: 'center', gap: 10,
   },

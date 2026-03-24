@@ -37,21 +37,21 @@ export function TagRow({ tags, compact }: TagRowProps) {
   const badges: { label: string; color: string; text: string }[] = [];
 
   if (tags.prepTime) badges.push({ label: `${t('prepTime')}: ${tags.prepTime}${t('minutes')}`, color: Colors.blueLight, text: Colors.blue });
-  if (tags.cookTime) badges.push({ label: `${t('cookTime')}: ${tags.cookTime}${t('minutes')}`, color: '#FFF8E1', text: '#E65100' });
+  if (tags.cookTime) badges.push({ label: `${t('cookTime')}: ${tags.cookTime}${t('minutes')}`, color: Colors.sunLighter, text: Colors.sunDark });
   if (tags.totalTime) badges.push({ label: `${t('totalTime')}: ${tags.totalTime}${t('minutes')}`, color: Colors.sunLighter, text: Colors.sunDark });
 
   if (tags.difficulty) {
-    const diffMap = { easy: Colors.greenLight, medium: '#FFF8E1', hard: '#FFEBEE' };
-    const diffText = { easy: Colors.greenDark, medium: '#E65100', hard: Colors.red };
+    const diffMap = { easy: Colors.greenLight, medium: Colors.sunLighter, hard: Colors.mauveLight };
+    const diffText = { easy: Colors.greenDark, medium: Colors.sunDark, hard: Colors.mauve };
     const diffLabel = { easy: t('easy'), medium: t('medium'), hard: t('hard') };
     badges.push({ label: diffLabel[tags.difficulty], color: diffMap[tags.difficulty], text: diffText[tags.difficulty] });
   }
 
   if (tags.vegan) badges.push({ label: t('vegan'), color: Colors.greenLight, text: Colors.greenDark });
-  else if (tags.vegetarian) badges.push({ label: t('vegetarian'), color: '#F1F8E9', text: '#558B2F' });
+  else if (tags.vegetarian) badges.push({ label: t('vegetarian'), color: Colors.blueLight, text: Colors.blue });
 
-  if (tags.glutenFree) badges.push({ label: t('glutenFree'), color: '#FFF3E0', text: '#BF360C' });
-  if (tags.dairyFree) badges.push({ label: t('dairyFree'), color: '#E8EAF6', text: '#283593' });
+  if (tags.glutenFree) badges.push({ label: t('glutenFree'), color: Colors.sunLighter, text: Colors.sunDark });
+  if (tags.dairyFree) badges.push({ label: t('dairyFree'), color: Colors.mauveLight, text: Colors.mauve });
 
   if (badges.length === 0) return null;
 
