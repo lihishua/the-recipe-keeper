@@ -1,5 +1,5 @@
 // app/recipe/add.tsx
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View, Text, TextInput, ScrollView, TouchableOpacity, Image,
   StyleSheet, Alert, KeyboardAvoidingView, Platform,
@@ -11,6 +11,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useLang } from '../../src/context/LanguageContext';
 import { useRecipes, Recipe, RecipeTags, Category } from '../../src/context/RecipeContext';
 import { Fonts, Radius } from '../../src/theme';
+import { draftStore, RecipeConfidence } from '../../src/services/draftStore';
 
 const BG      = '#d0eaec';
 const BG_DARK = '#18727d';
@@ -55,7 +56,8 @@ const ALL_TAGS: { key: UnifiedTag; icon: React.ComponentProps<typeof MaterialCom
 ];
 
 export default function AddRecipeManualScreen() {
-  const { t, lang, isRTL } = useLang();
+  const { t, lang, isRTL, fontRecipe, fontApp } = useLang();
+  const styles = useMemo(() => makeStyles(fontRecipe, fontApp), [fontRecipe, fontApp]);
   const { addRecipe } = useRecipes();
 
   const [titleHe, setTitleHe]   = useState('');
@@ -67,9 +69,19 @@ export default function AddRecipeManualScreen() {
   const [customTagInput, setCustomTagInput] = useState('');
   const [selectedIcon, setSelectedIcon] = useState<IconOption>(RECIPE_ICONS[RECIPE_ICONS.length - 1]);
   const [coverUri, setCoverUri]         = useState<string | null>(null);
-  const [prepTime, setPrepTime] = useState('');
-  const [cookTime, setCookTime] = useState('');
-  const [totalTime, setTotalTime] = useState('');
+  const [prepTime, setPrepTime]   = useState('');
+  const [cookTime, setCookTime]   = useState('');
+  const [bakeTime, setBakeTime]   = useState('');
+  const [riseTime, setRiseTime]   = useState('');
+  const [confidence, setConfidence]         = useState<RecipeConfidence | null>(null);
+  const [ingEnDraft, setIngEnDraft]         = useState<string[]>([]);
+  const [stepsEnDraft, setStepsEnDraft]     = useState<string[]>([]);
+  const [draftSourceType, setDraftSourceType] = useState<Recipe['sourceType'] | undefined>();
+  const [draftSourceUrl, setDraftSourceUrl]   = useState<string | undefined>();
+  const [draftEmoji, setDraftEmoji]           = useState<string | undefined>();
+  const [difficulty, setDifficulty]           = useState<'easy' | 'medium' | 'hard' | undefined>();
+  const [notes, setNotes]                     = useState('');
+  const [recipeLink, setRecipeLink]           = useState('');
 
   const pickCoverPhoto = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
@@ -93,6 +105,44 @@ export default function AddRecipeManualScreen() {
   const addStep    = () => setSteps([...steps, '']);
   const removeStep = (i: number) => setSteps(steps.filter((_, j) => j !== i));
 
+  useEffect(() => {
+    const draft = draftStore.get();
+    if (!draft) return;
+    draftStore.clear();
+    const { recipe: r, confidence: c } = draft;
+    if (r.titleHe) setTitleHe(r.titleHe);
+    if (r.titleEn) setTitleEn(r.titleEn);
+    if (r.ingredientsHe?.length) setIngredients(r.ingredientsHe);
+    if (r.stepsHe?.length) setSteps(r.stepsHe);
+    if (r.ingredientsEn?.length) setIngEnDraft(r.ingredientsEn);
+    if (r.stepsEn?.length) setStepsEnDraft(r.stepsEn);
+    if (r.sourceUri) setCoverUri(r.sourceUri);
+    if (r.sourceType) setDraftSourceType(r.sourceType);
+    if (r.sourceUrl) setDraftSourceUrl(r.sourceUrl);
+    if (r.emoji) setDraftEmoji(r.emoji);
+    if (r.tags?.difficulty) setDifficulty(r.tags.difficulty);
+    if (r.notes) setNotes(r.notes);
+    if (r.sourceUrl) setRecipeLink(r.sourceUrl);
+    if (r.tags?.prepTime) setPrepTime(String(r.tags.prepTime));
+    if (r.tags?.cookTime) setCookTime(String(r.tags.cookTime));
+    if (r.tags?.bakeTime) setBakeTime(String(r.tags.bakeTime));
+    if (r.tags?.riseTime) setRiseTime(String(r.tags.riseTime));
+    const newTags: UnifiedTag[] = [];
+    if (r.category && CATEGORY_KEYS.includes(r.category as Category)) newTags.push(r.category as Category);
+    if (r.tags?.vegan) newTags.push('vegan');
+    if (r.tags?.vegetarian) newTags.push('vegetarian');
+    if (r.tags?.glutenFree) newTags.push('glutenFree');
+    if (r.tags?.dairyFree) newTags.push('dairyFree');
+    if (newTags.length > 0) setSelectedTags(newTags);
+    if (c) setConfidence(c);
+  }, []);
+
+  const hasUncertain = confidence !== null && (
+    (confidence.title !== undefined && confidence.title < 0.7) ||
+    (confidence.ingredients ?? []).some(c => c < 0.7) ||
+    (confidence.steps ?? []).some(c => c < 0.7)
+  );
+
   const handleSave = async () => {
     const title = lang === 'he' ? titleHe : titleEn;
     if (!title.trim()) {
@@ -102,9 +152,11 @@ export default function AddRecipeManualScreen() {
     const catTags = selectedTags.filter(t => CATEGORY_KEYS.includes(t as Category));
     const category: Category = (catTags[0] as Category) ?? 'other';
     const tags: RecipeTags = {
-      prepTime:  prepTime  ? parseInt(prepTime)  : undefined,
-      cookTime:  cookTime  ? parseInt(cookTime)  : undefined,
-      totalTime: totalTime ? parseInt(totalTime) : undefined,
+      prepTime: prepTime ? parseInt(prepTime) : undefined,
+      cookTime: cookTime ? parseInt(cookTime) : undefined,
+      bakeTime: bakeTime ? parseInt(bakeTime) : undefined,
+      riseTime: riseTime ? parseInt(riseTime) : undefined,
+      difficulty,
       vegan:       selectedTags.includes('vegan'),
       vegetarian:  selectedTags.includes('vegan') || selectedTags.includes('vegetarian'),
       glutenFree:  selectedTags.includes('glutenFree'),
@@ -119,13 +171,16 @@ export default function AddRecipeManualScreen() {
       titleEn: titleEn || titleHe,
       ingredients: filtered,
       ingredientsHe: filtered,
-      ingredientsEn: filtered,
+      ingredientsEn: ingEnDraft.length > 0 ? ingEnDraft : filtered,
       steps: filteredSteps,
       stepsHe: filteredSteps,
-      stepsEn: filteredSteps,
-      tags, category, emoji: selectedIcon.emoji,
+      stepsEn: stepsEnDraft.length > 0 ? stepsEnDraft : filteredSteps,
+      tags, category, emoji: draftEmoji ?? selectedIcon.emoji,
       customTags: customTags.filter(Boolean),
-      sourceType: 'manual',
+      notes: notes.trim() || undefined,
+      sourceType: draftSourceType ?? (recipeLink.trim() ? 'link' : 'manual'),
+      sourceUri: coverUri ?? undefined,
+      sourceUrl: recipeLink.trim() || draftSourceUrl,
       createdAt: Date.now(),
     };
     await addRecipe(recipe);
@@ -151,6 +206,14 @@ export default function AddRecipeManualScreen() {
           </TouchableOpacity>
         </View>
 
+        {hasUncertain && (
+          <View style={[styles.uncertainBanner, { flexDirection: rowDir }]}>
+            <MaterialCommunityIcons name="alert-circle-outline" size={14} color="#92400e" />
+            <Text style={[styles.uncertainBannerText, { textAlign: isRTL ? 'right' : 'left' }]}>
+              {lang === 'he' ? 'שדות מסומנים בצהוב – AI לא בטוח בקריאה שלהם' : 'Yellow fields were uncertain — please review before saving'}
+            </Text>
+          </View>
+        )}
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 60 }}>
 
           {/* ── HEADER ── */}
@@ -186,7 +249,7 @@ export default function AddRecipeManualScreen() {
               {/* Title + time */}
               <View style={{ flex: 1 }}>
                 <TextInput
-                  style={[styles.titleInput, { textAlign: isRTL ? 'right' : 'left' }]}
+                  style={[styles.titleInput, { textAlign: isRTL ? 'right' : 'left' }, confidence?.title !== undefined && confidence.title < 0.7 && styles.uncertainField]}
                   value={title}
                   onChangeText={setTitle}
                   placeholder={lang === 'he' ? 'שם המתכון' : 'Recipe name'}
@@ -196,42 +259,25 @@ export default function AddRecipeManualScreen() {
 
                 {/* Time row */}
                 <View style={[styles.timeRow, { flexDirection: rowDir }]}>
-                  <View style={styles.timeItem}>
-                    <MaterialCommunityIcons name="clock-outline" size={16} color={INK} />
-                    <TextInput
-                      style={styles.timeInput}
-                      value={prepTime}
-                      onChangeText={setPrepTime}
-                      keyboardType="number-pad"
-                      placeholder={lang === 'he' ? 'הכנה' : 'Prep'}
-                      placeholderTextColor="rgba(54,49,45,0.4)"
-                      textAlign="center"
-                    />
-                  </View>
-                  <View style={styles.timeItem}>
-                    <MaterialCommunityIcons name="pot-steam-outline" size={16} color={INK} />
-                    <TextInput
-                      style={styles.timeInput}
-                      value={cookTime}
-                      onChangeText={setCookTime}
-                      keyboardType="number-pad"
-                      placeholder={lang === 'he' ? 'בישול' : 'Cook'}
-                      placeholderTextColor="rgba(54,49,45,0.4)"
-                      textAlign="center"
-                    />
-                  </View>
-                  <View style={styles.timeItem}>
-                    <MaterialCommunityIcons name="timer-sand" size={16} color={INK} />
-                    <TextInput
-                      style={styles.timeInput}
-                      value={totalTime}
-                      onChangeText={setTotalTime}
-                      keyboardType="number-pad"
-                      placeholder={lang === 'he' ? 'סה"כ' : 'Total'}
-                      placeholderTextColor="rgba(54,49,45,0.4)"
-                      textAlign="center"
-                    />
-                  </View>
+                  {[
+                    { val: prepTime, set: setPrepTime, icon: 'clock-outline' as const,      ph: lang === 'he' ? 'הכנה'  : 'Prep' },
+                    { val: cookTime, set: setCookTime, icon: 'pot-steam-outline' as const,  ph: lang === 'he' ? 'בישול' : 'Cook' },
+                    { val: bakeTime, set: setBakeTime, icon: 'oven' as const,               ph: lang === 'he' ? 'אפייה' : 'Bake' },
+                    { val: riseTime, set: setRiseTime, icon: 'timer-sand' as const,         ph: lang === 'he' ? 'תפיחה' : 'Rise' },
+                  ].map(({ val, set, icon, ph }) => (
+                    <View key={ph} style={styles.timeItem}>
+                      <MaterialCommunityIcons name={icon} size={16} color={INK} />
+                      <TextInput
+                        style={styles.timeInput}
+                        value={val}
+                        onChangeText={set}
+                        keyboardType="number-pad"
+                        placeholder={ph}
+                        placeholderTextColor="rgba(54,49,45,0.4)"
+                        textAlign="center"
+                      />
+                    </View>
+                  ))}
                 </View>
               </View>
             </View>
@@ -248,7 +294,7 @@ export default function AddRecipeManualScreen() {
               <View key={i} style={[styles.ingRow, { flexDirection: rowDir }]}>
                 <Text style={styles.ingHeart}>♡</Text>
                 <TextInput
-                  style={[styles.ingInput, { flex: 1, textAlign: isRTL ? 'right' : 'left' }]}
+                  style={[styles.ingInput, { flex: 1, textAlign: isRTL ? 'right' : 'left' }, confidence?.ingredients?.[i] !== undefined && confidence.ingredients![i] < 0.7 && styles.uncertainField]}
                   value={ing}
                   onChangeText={v => updateIng(i, v)}
                   placeholder={t('ingredientPlaceholder')}
@@ -278,7 +324,7 @@ export default function AddRecipeManualScreen() {
               <View key={i} style={[styles.stepRow, { flexDirection: rowDir }]}>
                 <Text style={styles.stepBullet}>•</Text>
                 <TextInput
-                  style={[styles.ingInput, { flex: 1, textAlign: isRTL ? 'right' : 'left', minHeight: 52 }]}
+                  style={[styles.ingInput, { flex: 1, textAlign: isRTL ? 'right' : 'left', minHeight: 52 }, confidence?.steps?.[i] !== undefined && confidence.steps![i] < 0.7 && styles.uncertainField]}
                   value={step}
                   onChangeText={v => updateStep(i, v)}
                   multiline
@@ -296,6 +342,69 @@ export default function AddRecipeManualScreen() {
               <MaterialCommunityIcons name="plus-circle-outline" size={16} color={BG_DARK} />
               <Text style={styles.addRowText}>{t('addStep')}</Text>
             </TouchableOpacity>
+          </View>
+
+          <View style={styles.divider} />
+
+          {/* ── DIFFICULTY ── */}
+          <View style={styles.section}>
+            <Text style={styles.sectionHeader}>{lang === 'he' ? 'רמת קושי' : 'Difficulty'}</Text>
+            <View style={styles.sectionLine} />
+            <View style={[styles.diffRow, { flexDirection: rowDir }]}>
+              {(['easy', 'medium', 'hard'] as const).map(d => {
+                const labels = { easy: { he: 'קל', en: 'Easy' }, medium: { he: 'בינוני', en: 'Medium' }, hard: { he: 'קשה', en: 'Hard' } };
+                const colors = { easy: '#4caf50', medium: '#df7b3e', hard: '#e53935' };
+                const active = difficulty === d;
+                return (
+                  <TouchableOpacity
+                    key={d}
+                    style={[styles.diffChip, active && { backgroundColor: colors[d], borderColor: colors[d] }]}
+                    onPress={() => setDifficulty(prev => prev === d ? undefined : d)}
+                  >
+                    <Text style={[styles.diffChipText, active && { color: '#fff' }]}>
+                      {lang === 'he' ? labels[d].he : labels[d].en}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
+          <View style={styles.divider} />
+
+          {/* ── NOTES / COMMENT ── */}
+          <View style={styles.section}>
+            <Text style={styles.sectionHeader}>{lang === 'he' ? 'הערות' : 'Notes'}</Text>
+            <View style={styles.sectionLine} />
+            <TextInput
+              style={[styles.notesInput, { textAlign: isRTL ? 'right' : 'left' }]}
+              value={notes}
+              onChangeText={setNotes}
+              placeholder={lang === 'he' ? 'הוסף הערות, טיפים, וריאציות...' : 'Add notes, tips, variations...'}
+              placeholderTextColor="rgba(54,49,45,0.35)"
+              multiline
+              numberOfLines={3}
+            />
+          </View>
+
+          <View style={styles.divider} />
+
+          {/* ── RECIPE LINK ── */}
+          <View style={styles.section}>
+            <Text style={styles.sectionHeader}>{lang === 'he' ? 'קישור למתכון' : 'Recipe Link'}</Text>
+            <View style={styles.sectionLine} />
+            <View style={[styles.linkRow, { flexDirection: rowDir }]}>
+              <MaterialCommunityIcons name="link-variant" size={18} color={BG_DARK} style={{ marginTop: 2 }} />
+              <TextInput
+                style={[styles.linkInput, { flex: 1, textAlign: isRTL ? 'right' : 'left' }]}
+                value={recipeLink}
+                onChangeText={setRecipeLink}
+                placeholder={lang === 'he' ? 'https://...' : 'https://...'}
+                placeholderTextColor="rgba(54,49,45,0.35)"
+                autoCapitalize="none"
+                keyboardType="url"
+              />
+            </View>
           </View>
 
           <View style={styles.divider} />
@@ -352,7 +461,8 @@ export default function AddRecipeManualScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(fontRecipe: string, fontApp: string) {
+  return StyleSheet.create({
   safe: { flex: 1, backgroundColor: BG },
 
   topBar: {
@@ -363,13 +473,13 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: Radius.pill,
     paddingHorizontal: 14, paddingVertical: 7,
   },
-  cancelText: { color: 'rgba(255,255,255,0.85)', fontFamily: Fonts.dybbuk, fontSize: 15 },
-  topTitle:   { color: '#fff', fontFamily: Fonts.dybbuk, fontSize: 18 },
+  cancelText: { color: 'rgba(255,255,255,0.85)', fontFamily: fontApp, fontSize: 15 },
+  topTitle:   { color: '#fff', fontFamily: fontApp, fontSize: 18, fontWeight: '700' },
   saveBtn: {
     backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: Radius.pill,
     paddingHorizontal: 14, paddingVertical: 7,
   },
-  saveText: { color: '#fff', fontFamily: Fonts.dybbuk, fontSize: 15, fontWeight: '700' },
+  saveText: { color: '#fff', fontFamily: fontApp, fontSize: 15, fontWeight: '700' },
 
   header: { padding: 20, paddingBottom: 24 },
   headerRow: { alignItems: 'flex-start', gap: 16 },
@@ -395,7 +505,7 @@ const styles = StyleSheet.create({
   iconOptActive: { borderColor: INK },
 
   titleInput: {
-    fontFamily: Fonts.dybbuk, fontSize: 28, color: INK, lineHeight: 34,
+    fontFamily: fontRecipe, fontSize: 28, color: INK, lineHeight: 34,
     marginBottom: 14,
     borderBottomWidth: 1.5, borderBottomColor: 'rgba(54,49,45,0.25)',
     paddingBottom: 6,
@@ -404,7 +514,7 @@ const styles = StyleSheet.create({
   timeRow: { flexWrap: 'wrap', gap: 10 },
   timeItem: { alignItems: 'center', gap: 4 },
   timeInput: {
-    fontFamily: Fonts.dybbuk, fontSize: 13, color: INK,
+    fontFamily: fontRecipe, fontSize: 13, color: INK,
     borderBottomWidth: 1, borderBottomColor: 'rgba(54,49,45,0.25)',
     paddingVertical: 2, width: 60,
   },
@@ -413,7 +523,7 @@ const styles = StyleSheet.create({
 
   section: { paddingHorizontal: 20, paddingVertical: 20 },
   sectionHeader: {
-    fontFamily: Fonts.dybbuk, fontSize: 28, color: INK,
+    fontFamily: fontRecipe, fontSize: 28, color: INK,
     textAlign: 'center', marginBottom: 6,
   },
   sectionLine: {
@@ -425,17 +535,17 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: 'rgba(54,49,45,0.2)',
     paddingVertical: 6, alignItems: 'center', gap: 10,
   },
-  ingHeart:  { fontFamily: Fonts.dybbuk, fontSize: 16, color: BG_DARK, flexShrink: 0 },
+  ingHeart:  { fontFamily: fontRecipe, fontSize: 16, color: BG_DARK, flexShrink: 0 },
   ingInput: {
-    fontFamily: Fonts.dybbuk, fontSize: 15, color: INK, lineHeight: 20,
+    fontFamily: fontRecipe, fontSize: 15, color: INK, lineHeight: 20,
     borderBottomWidth: 1, borderBottomColor: 'rgba(54,49,45,0.15)',
     paddingVertical: 4,
   },
   stepRow:   { paddingVertical: 6, alignItems: 'flex-start', gap: 10 },
-  stepBullet: { fontFamily: Fonts.dybbuk, fontSize: 20, color: BG_DARK, lineHeight: 24, flexShrink: 0 },
+  stepBullet: { fontFamily: fontRecipe, fontSize: 20, color: BG_DARK, lineHeight: 24, flexShrink: 0 },
   removeBtn: { padding: 4 },
   addRowBtn: { marginTop: 12, alignItems: 'center', gap: 6, opacity: 0.7 },
-  addRowText: { fontFamily: Fonts.dybbuk, fontSize: 14, color: BG_DARK },
+  addRowText: { fontFamily: fontRecipe, fontSize: 14, color: BG_DARK },
 
   tagGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tagChip: {
@@ -445,7 +555,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.4)',
   },
   tagChipActive: { backgroundColor: BG_DARK, borderColor: BG_DARK },
-  tagChipText:   { fontFamily: Fonts.dybbuk, fontSize: 13, color: INK },
+  tagChipText:   { fontFamily: fontRecipe, fontSize: 13, color: INK },
   tagChipTextActive: { color: '#fff' },
   customTagChip: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
@@ -453,16 +563,55 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: BG_DARK,
     paddingHorizontal: 12, paddingVertical: 7,
   },
-  customTagText: { fontFamily: Fonts.dybbuk, fontSize: 13, color: INK },
+  customTagText: { fontFamily: fontRecipe, fontSize: 13, color: INK },
   customTagRow: { marginTop: 12, gap: 8, alignItems: 'center' },
   customTagInput: {
-    fontFamily: Fonts.dybbuk, fontSize: 14, color: INK,
+    fontFamily: fontRecipe, fontSize: 14, color: INK,
     backgroundColor: 'rgba(255,255,255,0.5)', borderRadius: Radius.pill,
     borderWidth: 1.5, borderColor: 'rgba(54,49,45,0.2)',
     paddingHorizontal: 14, paddingVertical: 8,
+  },
+  uncertainField: {
+    backgroundColor: 'rgba(245, 158, 11, 0.18)',
+    borderRadius: Radius.sm, paddingHorizontal: 6,
+    borderWidth: 1, borderColor: 'rgba(245, 158, 11, 0.45)',
+  },
+  uncertainBanner: {
+    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+    borderBottomWidth: 1, borderBottomColor: 'rgba(245, 158, 11, 0.25)',
+    paddingHorizontal: 16, paddingVertical: 10, gap: 8, alignItems: 'center',
+  },
+  uncertainBannerText: {
+    fontFamily: fontRecipe, fontSize: 12, color: '#92400e', flex: 1,
   },
   customTagAddBtn: {
     width: 36, height: 36, borderRadius: 18,
     backgroundColor: BG_DARK, alignItems: 'center', justifyContent: 'center',
   },
-});
+
+  diffRow: { gap: 10, justifyContent: 'center' },
+  diffChip: {
+    flex: 1, paddingVertical: 10, borderRadius: Radius.pill,
+    borderWidth: 1.5, borderColor: 'rgba(54,49,45,0.3)',
+    backgroundColor: 'rgba(255,255,255,0.4)',
+    alignItems: 'center',
+  },
+  diffChipText: { fontFamily: fontRecipe, fontSize: 14, color: INK, fontWeight: '600' },
+
+  notesInput: {
+    fontFamily: fontRecipe, fontSize: 15, color: INK,
+    backgroundColor: 'rgba(255,255,255,0.5)', borderRadius: Radius.md,
+    borderWidth: 1.5, borderColor: 'rgba(54,49,45,0.2)',
+    paddingHorizontal: 14, paddingVertical: 10,
+    minHeight: 80, textAlignVertical: 'top',
+  },
+
+  linkRow: { alignItems: 'center', gap: 10 },
+  linkInput: {
+    fontFamily: fontRecipe, fontSize: 14, color: INK,
+    backgroundColor: 'rgba(255,255,255,0.5)', borderRadius: Radius.pill,
+    borderWidth: 1.5, borderColor: 'rgba(54,49,45,0.2)',
+    paddingHorizontal: 14, paddingVertical: 8,
+  },
+  });
+}

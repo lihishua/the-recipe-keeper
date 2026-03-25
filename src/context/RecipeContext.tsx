@@ -8,12 +8,20 @@ export type Category = 'italian' | 'desserts' | 'salads' | 'breakfast' | 'asian'
 export interface RecipeTags {
   prepTime?: number;     // minutes
   cookTime?: number;     // minutes
-  totalTime?: number;    // minutes (can be used for rising time etc.)
+  bakeTime?: number;     // minutes (baking)
+  riseTime?: number;     // minutes (dough rising)
+  totalTime?: number;    // minutes (legacy / manual override)
   difficulty?: Difficulty;
   vegan?: boolean;
   vegetarian?: boolean;
   glutenFree?: boolean;
   dairyFree?: boolean;
+}
+
+/** Returns the sum of all time components as the displayed total */
+export function computeTotalTime(tags: RecipeTags): number {
+  const sum = (tags.prepTime ?? 0) + (tags.cookTime ?? 0) + (tags.bakeTime ?? 0) + (tags.riseTime ?? 0);
+  return sum > 0 ? sum : (tags.totalTime ?? 0);
 }
 
 export interface Recipe {
@@ -30,8 +38,9 @@ export interface Recipe {
   tags: RecipeTags;
   category: Category;
   emoji: string;
-  sourceType: 'photo' | 'screenshot' | 'video' | 'manual';
-  sourceUri?: string;    // local image path
+  sourceType: 'photo' | 'screenshot' | 'video' | 'manual' | 'link';
+  sourceUri?: string;    // local or remote image path
+  sourceUrl?: string;    // original web/social link
   videoUrl?: string;
   videoPlatform?: string;
   createdAt: number;     // timestamp

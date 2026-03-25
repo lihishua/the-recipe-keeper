@@ -12,7 +12,7 @@ interface Props {
 }
 
 export function RecipeCard({ recipe, onPress, horizontal }: Props) {
-  const { lang, t } = useLang();
+  const { lang, t, fontRecipe } = useLang();
   const title = lang === 'he' ? recipe.titleHe : recipe.titleEn ?? recipe.title;
 
   const timeStr = recipe.tags.totalTime
@@ -31,7 +31,7 @@ export function RecipeCard({ recipe, onPress, horizontal }: Props) {
           <View style={styles.tagPill}>
             <Text style={styles.tagText}>{t(recipe.category as any)}</Text>
           </View>
-          <Text style={styles.hTitle} numberOfLines={2}>{title}</Text>
+          <Text style={[styles.hTitle, { fontFamily: fontRecipe }]} numberOfLines={2}>{title}</Text>
           <Text style={styles.hMeta}>{timeStr}</Text>
         </View>
       </TouchableOpacity>
@@ -47,7 +47,7 @@ export function RecipeCard({ recipe, onPress, horizontal }: Props) {
         <View style={styles.tagPill}>
           <Text style={styles.tagText}>{t(recipe.category as any)}</Text>
         </View>
-        <Text style={styles.title} numberOfLines={2}>{title}</Text>
+        <Text style={[styles.title, { fontFamily: fontRecipe }]} numberOfLines={2}>{title}</Text>
         <Text style={styles.meta}>{timeStr}</Text>
       </View>
     </TouchableOpacity>

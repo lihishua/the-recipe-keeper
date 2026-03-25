@@ -1,5 +1,5 @@
 // app/recipe/edit/[id].tsx
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View, Text, TextInput, ScrollView, TouchableOpacity, Image,
   StyleSheet, KeyboardAvoidingView, Platform,
@@ -56,7 +56,8 @@ const ALL_TAGS: { key: UnifiedTag; icon: React.ComponentProps<typeof MaterialCom
 
 export default function EditRecipeScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { t, lang, isRTL } = useLang();
+  const { t, lang, isRTL, fontRecipe } = useLang();
+  const styles = useMemo(() => makeStyles(fontRecipe), [fontRecipe]);
   const { getRecipeById, updateRecipe } = useRecipes();
   const recipe = getRecipeById(id);
 
@@ -79,7 +80,8 @@ export default function EditRecipeScreen() {
   };
   const [prepTime, setPrepTime] = useState(recipe?.tags?.prepTime?.toString() ?? '');
   const [cookTime, setCookTime] = useState(recipe?.tags?.cookTime?.toString() ?? '');
-  const [totalTime, setTotalTime] = useState(recipe?.tags?.totalTime?.toString() ?? '');
+  const [bakeTime, setBakeTime] = useState(recipe?.tags?.bakeTime?.toString() ?? '');
+  const [riseTime, setRiseTime] = useState(recipe?.tags?.riseTime?.toString() ?? '');
   const [selectedTags, setSelectedTags] = useState<UnifiedTag[]>(() => {
     const tags: UnifiedTag[] = [recipe?.category ?? 'other'];
     if (recipe?.tags?.vegan) tags.push('vegan');
@@ -114,9 +116,10 @@ export default function EditRecipeScreen() {
     const catTags = selectedTags.filter(t => CATEGORY_KEYS.includes(t as Category));
     const category: Category = (catTags[0] as Category) ?? 'other';
     const tags: RecipeTags = {
-      prepTime:  prepTime  ? parseInt(prepTime)  : undefined,
-      cookTime:  cookTime  ? parseInt(cookTime)  : undefined,
-      totalTime: totalTime ? parseInt(totalTime) : undefined,
+      prepTime: prepTime ? parseInt(prepTime) : undefined,
+      cookTime: cookTime ? parseInt(cookTime) : undefined,
+      bakeTime: bakeTime ? parseInt(bakeTime) : undefined,
+      riseTime: riseTime ? parseInt(riseTime) : undefined,
       vegan:      selectedTags.includes('vegan'),
       vegetarian: selectedTags.includes('vegan') || selectedTags.includes('vegetarian'),
       glutenFree: selectedTags.includes('glutenFree'),
@@ -203,42 +206,25 @@ export default function EditRecipeScreen() {
 
                 {/* Time row */}
                 <View style={[styles.timeRow, { flexDirection: rowDir }]}>
-                  <View style={styles.timeItem}>
-                    <MaterialCommunityIcons name="clock-outline" size={16} color={INK} />
-                    <TextInput
-                      style={styles.timeInput}
-                      value={prepTime}
-                      onChangeText={setPrepTime}
-                      keyboardType="number-pad"
-                      placeholder={lang === 'he' ? 'הכנה' : 'Prep'}
-                      placeholderTextColor="rgba(54,49,45,0.4)"
-                      textAlign="center"
-                    />
-                  </View>
-                  <View style={styles.timeItem}>
-                    <MaterialCommunityIcons name="pot-steam-outline" size={16} color={INK} />
-                    <TextInput
-                      style={styles.timeInput}
-                      value={cookTime}
-                      onChangeText={setCookTime}
-                      keyboardType="number-pad"
-                      placeholder={lang === 'he' ? 'בישול' : 'Cook'}
-                      placeholderTextColor="rgba(54,49,45,0.4)"
-                      textAlign="center"
-                    />
-                  </View>
-                  <View style={styles.timeItem}>
-                    <MaterialCommunityIcons name="timer-sand" size={16} color={INK} />
-                    <TextInput
-                      style={styles.timeInput}
-                      value={totalTime}
-                      onChangeText={setTotalTime}
-                      keyboardType="number-pad"
-                      placeholder={lang === 'he' ? 'סה"כ' : 'Total'}
-                      placeholderTextColor="rgba(54,49,45,0.4)"
-                      textAlign="center"
-                    />
-                  </View>
+                  {[
+                    { val: prepTime, set: setPrepTime, icon: 'clock-outline' as const,     ph: lang === 'he' ? 'הכנה'  : 'Prep' },
+                    { val: cookTime, set: setCookTime, icon: 'pot-steam-outline' as const, ph: lang === 'he' ? 'בישול' : 'Cook' },
+                    { val: bakeTime, set: setBakeTime, icon: 'oven' as const,              ph: lang === 'he' ? 'אפייה' : 'Bake' },
+                    { val: riseTime, set: setRiseTime, icon: 'timer-sand' as const,        ph: lang === 'he' ? 'תפיחה' : 'Rise' },
+                  ].map(({ val, set, icon, ph }) => (
+                    <View key={ph} style={styles.timeItem}>
+                      <MaterialCommunityIcons name={icon} size={16} color={INK} />
+                      <TextInput
+                        style={styles.timeInput}
+                        value={val}
+                        onChangeText={set}
+                        keyboardType="number-pad"
+                        placeholder={ph}
+                        placeholderTextColor="rgba(54,49,45,0.4)"
+                        textAlign="center"
+                      />
+                    </View>
+                  ))}
                 </View>
               </View>
             </View>
@@ -359,7 +345,8 @@ export default function EditRecipeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(fontRecipe: string) {
+  return StyleSheet.create({
   safe: { flex: 1, backgroundColor: BG },
 
   // Top bar
@@ -371,13 +358,13 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: Radius.pill,
     paddingHorizontal: 14, paddingVertical: 7,
   },
-  cancelText: { color: 'rgba(255,255,255,0.85)', fontFamily: Fonts.dybbuk, fontSize: 15 },
-  topTitle: { color: '#fff', fontFamily: Fonts.dybbuk, fontSize: 18 },
+  cancelText: { color: 'rgba(255,255,255,0.85)', fontFamily: fontRecipe, fontSize: 15 },
+  topTitle: { color: '#fff', fontFamily: fontRecipe, fontSize: 18 },
   saveBtn: {
     backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: Radius.pill,
     paddingHorizontal: 14, paddingVertical: 7,
   },
-  saveText: { color: '#fff', fontFamily: Fonts.dybbuk, fontSize: 15, fontWeight: '700' },
+  saveText: { color: '#fff', fontFamily: fontRecipe, fontSize: 15, fontWeight: '700' },
 
   // Header
   header: { padding: 20, paddingBottom: 24 },
@@ -402,7 +389,7 @@ const styles = StyleSheet.create({
   iconOptActive: { borderColor: INK },
 
   titleInput: {
-    fontFamily: Fonts.dybbuk,
+    fontFamily: fontRecipe,
     fontSize: 28,
     color: INK,
     lineHeight: 34,
@@ -416,7 +403,7 @@ const styles = StyleSheet.create({
   timeRow: { flexWrap: 'wrap', gap: 10 },
   timeItem: { alignItems: 'center', gap: 4 },
   timeInput: {
-    fontFamily: Fonts.dybbuk, fontSize: 13, color: INK,
+    fontFamily: fontRecipe, fontSize: 13, color: INK,
     borderBottomWidth: 1, borderBottomColor: 'rgba(54,49,45,0.25)',
     paddingVertical: 2, width: 60,
   },
@@ -427,7 +414,7 @@ const styles = StyleSheet.create({
   // Sections
   section: { paddingHorizontal: 20, paddingVertical: 20 },
   sectionHeader: {
-    fontFamily: Fonts.dybbuk, fontSize: 28, color: INK,
+    fontFamily: fontRecipe, fontSize: 28, color: INK,
     textAlign: 'center', marginBottom: 6,
   },
   sectionLine: {
@@ -440,17 +427,17 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: 'rgba(54,49,45,0.2)',
     paddingVertical: 6, alignItems: 'center', gap: 10,
   },
-  ingHeart: { fontFamily: Fonts.dybbuk, fontSize: 16, color: BG_DARK, flexShrink: 0 },
+  ingHeart: { fontFamily: fontRecipe, fontSize: 16, color: BG_DARK, flexShrink: 0 },
   ingInput: {
-    fontFamily: Fonts.dybbuk, fontSize: 15, color: INK, lineHeight: 20,
+    fontFamily: fontRecipe, fontSize: 15, color: INK, lineHeight: 20,
     borderBottomWidth: 1, borderBottomColor: 'rgba(54,49,45,0.15)',
     paddingVertical: 4,
   },
   stepRow: { paddingVertical: 6, alignItems: 'flex-start', gap: 10 },
-  stepBullet: { fontFamily: Fonts.dybbuk, fontSize: 20, color: BG_DARK, lineHeight: 24, flexShrink: 0 },
+  stepBullet: { fontFamily: fontRecipe, fontSize: 20, color: BG_DARK, lineHeight: 24, flexShrink: 0 },
   removeBtn: { padding: 4 },
   addRowBtn: { marginTop: 12, alignItems: 'center', gap: 6, opacity: 0.7 },
-  addRowText: { fontFamily: Fonts.dybbuk, fontSize: 14, color: BG_DARK },
+  addRowText: { fontFamily: fontRecipe, fontSize: 14, color: BG_DARK },
 
   // Tags
   tagGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
@@ -461,7 +448,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.4)',
   },
   tagChipActive: { backgroundColor: BG_DARK, borderColor: BG_DARK },
-  tagChipText:   { fontFamily: Fonts.dybbuk, fontSize: 13, color: INK },
+  tagChipText:   { fontFamily: fontRecipe, fontSize: 13, color: INK },
   tagChipTextActive: { color: '#fff' },
   customTagChip: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
@@ -469,10 +456,10 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: BG_DARK,
     paddingHorizontal: 12, paddingVertical: 7,
   },
-  customTagText: { fontFamily: Fonts.dybbuk, fontSize: 13, color: INK },
+  customTagText: { fontFamily: fontRecipe, fontSize: 13, color: INK },
   customTagRow: { marginTop: 12, gap: 8, alignItems: 'center' },
   customTagInput: {
-    fontFamily: Fonts.dybbuk, fontSize: 14, color: INK,
+    fontFamily: fontRecipe, fontSize: 14, color: INK,
     backgroundColor: 'rgba(255,255,255,0.5)', borderRadius: Radius.pill,
     borderWidth: 1.5, borderColor: 'rgba(54,49,45,0.2)',
     paddingHorizontal: 14, paddingVertical: 8,
@@ -481,4 +468,5 @@ const styles = StyleSheet.create({
     width: 36, height: 36, borderRadius: 18,
     backgroundColor: BG_DARK, alignItems: 'center', justifyContent: 'center',
   },
-});
+  });
+}

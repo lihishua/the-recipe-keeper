@@ -1,70 +1,90 @@
 // app/(tabs)/_layout.tsx
 import { Tabs } from 'expo-router';
-import { Text, View } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLang } from '../../src/context/LanguageContext';
-import { Colors } from '../../src/theme';
+import { Colors, Radius } from '../../src/theme';
 
-function TabIcon({ name, label, focused }: { name: React.ComponentProps<typeof MaterialCommunityIcons>['name']; label: string; focused: boolean }) {
+function TabIcon({
+  name,
+  focused,
+}: {
+  name: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
+  focused: boolean;
+}) {
   return (
-    <View style={{ alignItems: 'center', gap: 2 }}>
-      <MaterialCommunityIcons name={name} size={22} color={focused ? Colors.sun : Colors.text3} />
-      <Text style={{ fontSize: 10, color: focused ? Colors.sun : Colors.text3, fontWeight: '600', fontFamily: 'Gan' }}>
-        {label}
-      </Text>
+    <View style={[styles.tabBtn, focused && styles.tabBtnActive]}>
+      <MaterialCommunityIcons
+        name={name}
+        size={22}
+        color={focused ? Colors.blue : 'rgba(255,255,255,0.7)'}
+      />
     </View>
   );
 }
 
 export default function TabsLayout() {
-  const { t, isRTL } = useLang();
+  const { t } = useLang();
 
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarStyle: {
-          backgroundColor: Colors.card,
-          borderTopColor: Colors.border,
-          borderTopWidth: 1.5,
-          height: 80,
-          paddingTop: 8,
-          paddingBottom: 20,
-        },
         tabBarShowLabel: false,
+        tabBarStyle: {
+          backgroundColor: Colors.blue,
+          borderTopWidth: 0,
+          height: 72,
+          paddingTop: 10,
+          paddingBottom: 18,
+        },
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
           tabBarStyle: { display: 'none' },
-          tabBarIcon: ({ focused }) => <TabIcon name="home-outline" label={t('home')} focused={focused} />,
+          tabBarButton: () => null,
         }}
       />
       <Tabs.Screen
         name="recent"
         options={{
-          tabBarIcon: ({ focused }) => <TabIcon name="clock-outline" label={t('recent')} focused={focused} />,
+          tabBarIcon: ({ focused }) => <TabIcon name="clock-outline" focused={focused} />,
         }}
       />
       <Tabs.Screen
         name="categories"
         options={{
-          tabBarIcon: ({ focused }) => <TabIcon name="shape-outline" label={t('byCategory')} focused={focused} />,
+          tabBarIcon: ({ focused }) => <TabIcon name="shape-outline" focused={focused} />,
         }}
       />
       <Tabs.Screen
         name="alphabetical"
         options={{
-          tabBarIcon: ({ focused }) => <TabIcon name="sort-alphabetical-ascending" label={t('alphabetical')} focused={focused} />,
+          tabBarIcon: ({ focused }) => <TabIcon name="sort-alphabetical-ascending" focused={focused} />,
         }}
       />
       <Tabs.Screen
         name="search"
         options={{
-          tabBarIcon: ({ focused }) => <TabIcon name="magnify" label={t('search')} focused={focused} />,
+          tabBarIcon: ({ focused }) => <TabIcon name="magnify" focused={focused} />,
         }}
       />
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  tabBtn: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+  tabBtnActive: {
+    backgroundColor: 'rgba(255,255,255,0.92)',
+  },
+});

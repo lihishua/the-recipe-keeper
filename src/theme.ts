@@ -26,8 +26,11 @@ export const Colors = {
 };
 
 export const Fonts = {
-  dybbuk: 'Dybbuk-Regular',   // recipe titles
-  gan: 'Gan',                 // main app font everywhere
+  dybbuk: 'Dybbuk-Regular',   // recipe titles (Hebrew)
+  gan: 'Gan',                 // main app font (Hebrew)
+  chewy: 'Chewy',             // main app font (English)
+  grandRainbow: 'GrandRainbow', // recipe template (English)
+  scripto: 'Scripto',         // main page header (English)
   system: undefined as string | undefined,
 };
 

@@ -1,5 +1,5 @@
 // src/hooks/useAlbumScanner.ts
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import * as MediaLibrary from 'expo-media-library';
 import { Alert, Linking } from 'react-native';
 import { isRecipeImage, extractRecipeFromImage } from '../services/claudeService';
@@ -16,6 +16,7 @@ export function useAlbumScanner() {
   const [progress, setProgress] = useState(0);
   const [total, setTotal] = useState(0);
   const [candidates, setCandidates] = useState<ScanCandidate[]>([]);
+  const cancelledRef = useRef(false);
 
   const requestPermission = async (): Promise<boolean> => {
     const { status: existing } = await MediaLibrary.getPermissionsAsync();
@@ -35,7 +36,8 @@ export function useAlbumScanner() {
     return true;
   };
 
-  const scanAlbum = useCallback(async () => {
+  const scanAlbum = useCallback(async (albumId?: string, knownUris?: Set<string>) => {
+    cancelledRef.current = false;
     setStatus('requesting');
     const ok = await requestPermission();
     if (!ok) { setStatus('error'); return; }
@@ -45,29 +47,28 @@ export function useAlbumScanner() {
     setProgress(0);
 
     try {
-      // Get ALL photos from library, newest first
       const { assets, totalCount } = await MediaLibrary.getAssetsAsync({
         mediaType: 'photo',
-        first: 200, // scan up to 200 most recent photos
+        first: 200,
         sortBy: [[MediaLibrary.SortBy.creationTime, false]],
+        ...(albumId ? { album: albumId } : {}),
       });
 
       setTotal(Math.min(assets.length, totalCount));
       const found: ScanCandidate[] = [];
 
       for (let i = 0; i < assets.length; i++) {
+        if (cancelledRef.current) { setStatus('done'); return; }
         setProgress(i + 1);
         const asset = assets[i];
-
-        // Get local URI
+        // Skip if this photo was already added as a recipe
+        if (knownUris?.has(asset.uri)) continue;
         const info = await MediaLibrary.getAssetInfoAsync(asset);
         const uri = info.localUri ?? info.uri;
-
-        // Quick detection first
+        if (knownUris?.has(uri)) continue;
         const isRecipe = await isRecipeImage(uri);
-
+        if (cancelledRef.current) { setStatus('done'); return; }
         if (isRecipe) {
-          // Full extraction
           const extracted = await extractRecipeFromImage(uri);
           found.push({ asset, extracted, isRecipe: true });
           setCandidates([...found]);
@@ -77,10 +78,18 @@ export function useAlbumScanner() {
       setCandidates(found);
       setStatus('done');
     } catch (e) {
-      console.error('Album scan error:', e);
-      setStatus('error');
+      if (!cancelledRef.current) {
+        console.error('Album scan error:', e);
+        setStatus('error');
+      }
     }
   }, []);
+
+  const cancel = () => {
+    cancelledRef.current = true;
+    // Keep whatever was found — go to done so the user sees the results
+    setStatus('done');
+  };
 
   const reset = () => {
     setStatus('idle');
@@ -89,5 +98,5 @@ export function useAlbumScanner() {
     setTotal(0);
   };
 
-  return { status, progress, total, candidates, scanAlbum, reset };
+  return { status, progress, total, candidates, scanAlbum, cancel, reset } as const;
 }

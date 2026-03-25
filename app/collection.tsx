@@ -52,7 +52,7 @@ function pickRandom(recipes: Recipe[]): Recipe | null {
 }
 
 export default function CollectionScreen() {
-  const { t, lang, isRTL, fontHe } = useLang();
+  const { t, lang, isRTL, fontHe, fontRecipe } = useLang();
   const { recipes } = useRecipes();
 
   const [tab, setTab]               = useState<Tab>('all');
@@ -143,7 +143,7 @@ export default function CollectionScreen() {
         <View style={[styles.gridThumb, { backgroundColor: thumbColor }]}>
           <Text style={{ fontSize: 40 }}>{item.emoji}</Text>
         </View>
-        <Text style={[styles.gridTitle, { textAlign: isRTL ? 'right' : 'left' }]} numberOfLines={2}>{title}</Text>
+        <Text style={[styles.gridTitle, { textAlign: isRTL ? 'right' : 'left', fontFamily: fontRecipe }]} numberOfLines={2}>{title}</Text>
         {!!item.tags?.totalTime && (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
             <MaterialCommunityIcons name="clock-outline" size={11} color={Colors.text3} />
@@ -164,7 +164,7 @@ export default function CollectionScreen() {
           <Text style={{ fontSize: 28 }}>{item.emoji}</Text>
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={[styles.listTitle, { textAlign: isRTL ? 'right' : 'left' }]}>{title}</Text>
+          <Text style={[styles.listTitle, { textAlign: isRTL ? 'right' : 'left', fontFamily: fontRecipe }]}>{title}</Text>
           <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', gap: 4 }}>
             <Text style={styles.listMeta}>{t(item.category as any)}</Text>
             {!!item.tags?.totalTime && (
