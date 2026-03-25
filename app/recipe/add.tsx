@@ -8,10 +8,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { useLang } from '../../src/context/LanguageContext';
 import { useRecipes, Recipe, RecipeTags, Category } from '../../src/context/RecipeContext';
 import { Fonts, Radius } from '../../src/theme';
 import { draftStore, RecipeConfidence } from '../../src/services/draftStore';
+import { calculateNutrition } from '../../src/services/claudeService';
 
 const BG      = '#d0eaec';
 const BG_DARK = '#18727d';
@@ -48,7 +50,6 @@ const ALL_TAGS: { key: UnifiedTag; icon: React.ComponentProps<typeof MaterialCom
   { key: 'salads',     icon: 'leaf' },
   { key: 'breakfast',  icon: 'egg-outline' },
   { key: 'asian',      icon: 'bowl-mix-outline' },
-  { key: 'other',      icon: 'silverware-fork-knife' },
   { key: 'vegan',      icon: 'sprout' },
   { key: 'vegetarian', icon: 'food-apple-outline' },
   { key: 'glutenFree', icon: 'wheat-off' },
@@ -58,7 +59,7 @@ const ALL_TAGS: { key: UnifiedTag; icon: React.ComponentProps<typeof MaterialCom
 export default function AddRecipeManualScreen() {
   const { t, lang, isRTL, fontRecipe, fontApp } = useLang();
   const styles = useMemo(() => makeStyles(fontRecipe, fontApp), [fontRecipe, fontApp]);
-  const { addRecipe } = useRecipes();
+  const { addRecipe, updateRecipe } = useRecipes();
 
   const [titleHe, setTitleHe]   = useState('');
   const [titleEn, setTitleEn]   = useState('');
@@ -71,7 +72,6 @@ export default function AddRecipeManualScreen() {
   const [coverUri, setCoverUri]         = useState<string | null>(null);
   const [prepTime, setPrepTime]   = useState('');
   const [cookTime, setCookTime]   = useState('');
-  const [bakeTime, setBakeTime]   = useState('');
   const [riseTime, setRiseTime]   = useState('');
   const [confidence, setConfidence]         = useState<RecipeConfidence | null>(null);
   const [ingEnDraft, setIngEnDraft]         = useState<string[]>([]);
@@ -84,8 +84,14 @@ export default function AddRecipeManualScreen() {
   const [recipeLink, setRecipeLink]           = useState('');
 
   const pickCoverPhoto = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8, allowsEditing: true });
     if (!result.canceled) setCoverUri(result.assets[0].uri);
+  };
+
+  const rotateCover = async () => {
+    if (!coverUri) return;
+    const result = await manipulateAsync(coverUri, [{ rotate: 90 }], { compress: 0.9, format: SaveFormat.JPEG });
+    setCoverUri(result.uri);
   };
 
   const toggleTag = (tag: UnifiedTag) =>
@@ -124,8 +130,7 @@ export default function AddRecipeManualScreen() {
     if (r.notes) setNotes(r.notes);
     if (r.sourceUrl) setRecipeLink(r.sourceUrl);
     if (r.tags?.prepTime) setPrepTime(String(r.tags.prepTime));
-    if (r.tags?.cookTime) setCookTime(String(r.tags.cookTime));
-    if (r.tags?.bakeTime) setBakeTime(String(r.tags.bakeTime));
+    if (r.tags?.cookTime) setCookTime(String(r.tags.cookTime ?? r.tags.bakeTime ?? ''));
     if (r.tags?.riseTime) setRiseTime(String(r.tags.riseTime));
     const newTags: UnifiedTag[] = [];
     if (r.category && CATEGORY_KEYS.includes(r.category as Category)) newTags.push(r.category as Category);
@@ -154,7 +159,6 @@ export default function AddRecipeManualScreen() {
     const tags: RecipeTags = {
       prepTime: prepTime ? parseInt(prepTime) : undefined,
       cookTime: cookTime ? parseInt(cookTime) : undefined,
-      bakeTime: bakeTime ? parseInt(bakeTime) : undefined,
       riseTime: riseTime ? parseInt(riseTime) : undefined,
       difficulty,
       vegan:       selectedTags.includes('vegan'),
@@ -177,6 +181,8 @@ export default function AddRecipeManualScreen() {
       stepsEn: stepsEnDraft.length > 0 ? stepsEnDraft : filteredSteps,
       tags, category, emoji: draftEmoji ?? selectedIcon.emoji,
       customTags: customTags.filter(Boolean),
+      customTagsHe: lang === 'he' ? customTags.filter(Boolean) : undefined,
+      customTagsEn: lang === 'en' ? customTags.filter(Boolean) : undefined,
       notes: notes.trim() || undefined,
       sourceType: draftSourceType ?? (recipeLink.trim() ? 'link' : 'manual'),
       sourceUri: coverUri ?? undefined,
@@ -185,6 +191,10 @@ export default function AddRecipeManualScreen() {
     };
     await addRecipe(recipe);
     router.back();
+    // Calculate nutrition in background and update silently
+    calculateNutrition(filtered)
+      .then(nutrition => { if (nutrition) updateRecipe({ ...recipe, nutrition }); })
+      .catch(() => {});
   };
 
   const rowDir = isRTL ? 'row-reverse' : 'row';
@@ -223,24 +233,29 @@ export default function AddRecipeManualScreen() {
               {/* Illustrated icon picker */}
               <View style={styles.iconPickerWrap}>
                 {/* Preview */}
-                <TouchableOpacity style={[styles.heroIcon, { backgroundColor: selectedIcon.bg }]} onPress={pickCoverPhoto}>
+                <TouchableOpacity style={[styles.heroIcon, { backgroundColor: coverUri ? BG : selectedIcon.bg }]} onPress={pickCoverPhoto}>
                   {coverUri
-                    ? <Image source={{ uri: coverUri }} style={styles.heroImage} />
+                    ? <Image key={coverUri} source={{ uri: coverUri }} style={styles.heroImage} resizeMode="contain" />
                     : <MaterialCommunityIcons name={selectedIcon.iconName} size={48} color={selectedIcon.color} />
                   }
                   <View style={styles.cameraOverlay}>
                     <MaterialCommunityIcons name="camera-plus-outline" size={14} color="#fff" />
                   </View>
+                  {coverUri && (
+                    <TouchableOpacity style={styles.rotateOverlay} onPress={e => { e.stopPropagation?.(); rotateCover(); }}>
+                      <MaterialCommunityIcons name="rotate-right" size={14} color="#fff" />
+                    </TouchableOpacity>
+                  )}
                 </TouchableOpacity>
                 {/* Icon grid */}
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.iconStrip}>
                   {RECIPE_ICONS.map(opt => (
                     <TouchableOpacity
                       key={opt.iconName}
-                      style={[styles.iconOpt, { backgroundColor: opt.bg }, selectedIcon.iconName === opt.iconName && styles.iconOptActive]}
+                      style={[styles.iconOpt, selectedIcon.iconName === opt.iconName && styles.iconOptActive]}
                       onPress={() => { setSelectedIcon(opt); setCoverUri(null); }}
                     >
-                      <MaterialCommunityIcons name={opt.iconName} size={20} color={opt.color} />
+                      <MaterialCommunityIcons name={opt.iconName} size={20} color="rgba(54,49,45,0.5)" />
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
@@ -260,10 +275,9 @@ export default function AddRecipeManualScreen() {
                 {/* Time row */}
                 <View style={[styles.timeRow, { flexDirection: rowDir }]}>
                   {[
-                    { val: prepTime, set: setPrepTime, icon: 'clock-outline' as const,      ph: lang === 'he' ? 'הכנה'  : 'Prep' },
-                    { val: cookTime, set: setCookTime, icon: 'pot-steam-outline' as const,  ph: lang === 'he' ? 'בישול' : 'Cook' },
-                    { val: bakeTime, set: setBakeTime, icon: 'oven' as const,               ph: lang === 'he' ? 'אפייה' : 'Bake' },
-                    { val: riseTime, set: setRiseTime, icon: 'timer-sand' as const,         ph: lang === 'he' ? 'תפיחה' : 'Rise' },
+                    { val: prepTime, set: setPrepTime, icon: 'clock-outline' as const,     ph: lang === 'he' ? 'הכנה'       : 'Prep' },
+                    { val: cookTime, set: setCookTime, icon: 'pot-steam-outline' as const, ph: lang === 'he' ? 'בישול/אפייה' : 'Cook/Bake' },
+                    { val: riseTime, set: setRiseTime, icon: 'timer-sand' as const,        ph: lang === 'he' ? 'התפחה'      : 'Rise' },
                   ].map(({ val, set, icon, ph }) => (
                     <View key={ph} style={styles.timeItem}>
                       <MaterialCommunityIcons name={icon} size={16} color={INK} />
@@ -279,6 +293,27 @@ export default function AddRecipeManualScreen() {
                     </View>
                   ))}
                 </View>
+
+                {/* Difficulty row */}
+                <View style={[styles.diffRow, { flexDirection: rowDir, marginTop: 10 }]}>
+                  {(['easy', 'medium', 'hard'] as const).map(d => {
+                    const labels = { easy: { he: 'קל', en: 'Easy' }, medium: { he: 'בינוני', en: 'Medium' }, hard: { he: 'קשה', en: 'Hard' } };
+                    const colors = { easy: '#4caf50', medium: '#df7b3e', hard: '#e53935' };
+                    const active = difficulty === d;
+                    return (
+                      <TouchableOpacity
+                        key={d}
+                        style={[styles.diffChip, active && { backgroundColor: colors[d], borderColor: colors[d] }]}
+                        onPress={() => setDifficulty(prev => prev === d ? undefined : d)}
+                      >
+                        <MaterialCommunityIcons name="chef-hat" size={13} color={active ? '#fff' : INK} />
+                        <Text style={[styles.diffChipText, active && { color: '#fff' }]}>
+                          {lang === 'he' ? labels[d].he : labels[d].en}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
               </View>
             </View>
           </View>
@@ -292,7 +327,7 @@ export default function AddRecipeManualScreen() {
 
             {ingredients.map((ing, i) => (
               <View key={i} style={[styles.ingRow, { flexDirection: rowDir }]}>
-                <Text style={styles.ingHeart}>♡</Text>
+                <MaterialCommunityIcons name="heart-outline" size={16} color={BG_DARK} />
                 <TextInput
                   style={[styles.ingInput, { flex: 1, textAlign: isRTL ? 'right' : 'left' }, confidence?.ingredients?.[i] !== undefined && confidence.ingredients![i] < 0.7 && styles.uncertainField]}
                   value={ing}
@@ -302,7 +337,7 @@ export default function AddRecipeManualScreen() {
                 />
                 {ingredients.length > 1 && (
                   <TouchableOpacity onPress={() => removeIng(i)} style={styles.removeBtn}>
-                    <MaterialCommunityIcons name="minus-circle-outline" size={18} color="rgba(211,47,47,0.7)" />
+                    <MaterialCommunityIcons name="minus-circle-outline" size={18} color="rgba(74,74,74,0.6)" />
                   </TouchableOpacity>
                 )}
               </View>
@@ -333,7 +368,7 @@ export default function AddRecipeManualScreen() {
                 />
                 {steps.length > 1 && (
                   <TouchableOpacity onPress={() => removeStep(i)} style={styles.removeBtn}>
-                    <MaterialCommunityIcons name="minus-circle-outline" size={18} color="rgba(211,47,47,0.7)" />
+                    <MaterialCommunityIcons name="minus-circle-outline" size={18} color="rgba(74,74,74,0.6)" />
                   </TouchableOpacity>
                 )}
               </View>
@@ -342,32 +377,6 @@ export default function AddRecipeManualScreen() {
               <MaterialCommunityIcons name="plus-circle-outline" size={16} color={BG_DARK} />
               <Text style={styles.addRowText}>{t('addStep')}</Text>
             </TouchableOpacity>
-          </View>
-
-          <View style={styles.divider} />
-
-          {/* ── DIFFICULTY ── */}
-          <View style={styles.section}>
-            <Text style={styles.sectionHeader}>{lang === 'he' ? 'רמת קושי' : 'Difficulty'}</Text>
-            <View style={styles.sectionLine} />
-            <View style={[styles.diffRow, { flexDirection: rowDir }]}>
-              {(['easy', 'medium', 'hard'] as const).map(d => {
-                const labels = { easy: { he: 'קל', en: 'Easy' }, medium: { he: 'בינוני', en: 'Medium' }, hard: { he: 'קשה', en: 'Hard' } };
-                const colors = { easy: '#4caf50', medium: '#df7b3e', hard: '#e53935' };
-                const active = difficulty === d;
-                return (
-                  <TouchableOpacity
-                    key={d}
-                    style={[styles.diffChip, active && { backgroundColor: colors[d], borderColor: colors[d] }]}
-                    onPress={() => setDifficulty(prev => prev === d ? undefined : d)}
-                  >
-                    <Text style={[styles.diffChipText, active && { color: '#fff' }]}>
-                      {lang === 'he' ? labels[d].he : labels[d].en}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
           </View>
 
           <View style={styles.divider} />
@@ -496,10 +505,16 @@ function makeStyles(fontRecipe: string, fontApp: string) {
     backgroundColor: 'rgba(54,49,45,0.5)', borderRadius: 10,
     padding: 4,
   },
+  rotateOverlay: {
+    position: 'absolute', bottom: 6, left: 6,
+    backgroundColor: 'rgba(54,49,45,0.5)', borderRadius: 10,
+    padding: 4,
+  },
   iconStrip: { maxWidth: 110 },
   iconOpt: {
     width: 34, height: 34, borderRadius: Radius.md,
     borderWidth: 2, borderColor: 'transparent',
+    backgroundColor: 'rgba(54,49,45,0.07)',
     alignItems: 'center', justifyContent: 'center', marginRight: 4,
   },
   iconOptActive: { borderColor: INK },
@@ -589,14 +604,14 @@ function makeStyles(fontRecipe: string, fontApp: string) {
     backgroundColor: BG_DARK, alignItems: 'center', justifyContent: 'center',
   },
 
-  diffRow: { gap: 10, justifyContent: 'center' },
+  diffRow: { gap: 6, flexWrap: 'wrap' },
   diffChip: {
-    flex: 1, paddingVertical: 10, borderRadius: Radius.pill,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: Radius.pill,
     borderWidth: 1.5, borderColor: 'rgba(54,49,45,0.3)',
     backgroundColor: 'rgba(255,255,255,0.4)',
-    alignItems: 'center',
   },
-  diffChipText: { fontFamily: fontRecipe, fontSize: 14, color: INK, fontWeight: '600' },
+  diffChipText: { fontFamily: fontRecipe, fontSize: 12, color: INK },
 
   notesInput: {
     fontFamily: fontRecipe, fontSize: 15, color: INK,

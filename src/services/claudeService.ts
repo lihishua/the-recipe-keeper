@@ -423,6 +423,55 @@ If no recipe is found in the content, return: {"error": "no recipe found"}`;
   };
 }
 
+export interface NutritionPer100g {
+  calories: number;
+  protein: number;
+  fat: number;
+  carbs: number;
+  fiber?: number;
+  sugar?: number;
+}
+
+/**
+ * Estimates nutritional values per 100g of the prepared dish
+ * based on the ingredient list.
+ */
+export async function calculateNutrition(ingredients: string[]): Promise<NutritionPer100g | null> {
+  const list = ingredients.filter(Boolean).join('\n');
+  if (!list) return null;
+
+  const res = await fetch(CLAUDE_API, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': API_KEY,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 300,
+      system: 'You are a nutrition expert. You ONLY output valid JSON. No explanations, no markdown.',
+      messages: [{
+        role: 'user',
+        content: `Estimate the nutritional values per 100g of the prepared dish made from these ingredients:\n${list}\n\nReturn ONLY this JSON (numbers, no units):\n{"calories":<kcal>,"protein":<g>,"fat":<g>,"carbs":<g>,"fiber":<g>,"sugar":<g>}`,
+      }],
+    }),
+  });
+
+  if (!res.ok) return null;
+  const data = await res.json();
+  const raw = data?.content?.[0]?.text?.trim();
+  if (!raw) return null;
+  const start = raw.indexOf('{');
+  const end = raw.lastIndexOf('}');
+  if (start === -1 || end === -1) return null;
+  try {
+    return JSON.parse(raw.slice(start, end + 1)) as NutritionPer100g;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Extracts recipe metadata from a video URL (title, platform).
  */

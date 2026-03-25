@@ -8,7 +8,7 @@ import { useRecipes, Recipe } from '../../src/context/RecipeContext';
 import { Colors, Radius } from '../../src/theme';
 
 export default function AlphabeticalScreen() {
-  const { t, lang } = useLang();
+  const { t, lang, isRTL } = useLang();
   const { recipes } = useRecipes();
 
   const sections = useMemo(() => {
@@ -32,15 +32,15 @@ export default function AlphabeticalScreen() {
   const renderItem = ({ item }: { item: Recipe }) => {
     const title = ((lang === 'he' ? item.titleHe : item.titleEn) ?? item.title);
     return (
-      <TouchableOpacity style={styles.item} onPress={() => router.push(`/recipe/${item.id}`)}>
+      <TouchableOpacity style={[styles.item, { flexDirection: isRTL ? 'row-reverse' : 'row' }]} onPress={() => router.push(`/recipe/${item.id}`)}>
         <View style={styles.emoji}>
           <Text style={{ fontSize: 26 }}>{item.emoji}</Text>
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.itemTitle}>{title}</Text>
-          <Text style={styles.itemMeta}>{t(item.category as any)}</Text>
+          <Text style={[styles.itemTitle, { textAlign: isRTL ? 'right' : 'left' }]}>{title}</Text>
+          <Text style={[styles.itemMeta, { textAlign: isRTL ? 'right' : 'left' }]}>{t(item.category as any)}</Text>
         </View>
-        <Text style={styles.arrow}>›</Text>
+        <Text style={styles.arrow}>{isRTL ? '‹' : '›'}</Text>
       </TouchableOpacity>
     );
   };
@@ -55,7 +55,9 @@ export default function AlphabeticalScreen() {
         keyExtractor={r => r.id}
         renderItem={renderItem}
         renderSectionHeader={({ section: { title } }) => (
-          <Text style={styles.letter}>{title}</Text>
+          <View style={[styles.letterRow, { justifyContent: isRTL ? 'flex-end' : 'flex-start' }]}>
+            <Text style={styles.letter}>{title}</Text>
+          </View>
         )}
         contentContainerStyle={{ paddingBottom: 100 }}
         stickySectionHeadersEnabled
@@ -68,9 +70,13 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.cream },
   topBar: { backgroundColor: Colors.sun, padding: 20, paddingBottom: 14 },
   topTitle: { color: '#fff', fontSize: 22, fontWeight: '700' },
+  letterRow: {
+    flexDirection: 'row',
+    backgroundColor: Colors.cream,
+    paddingHorizontal: 16, paddingVertical: 8,
+  },
   letter: {
     fontSize: 22, fontWeight: '700', color: Colors.sun,
-    backgroundColor: Colors.cream, paddingHorizontal: 16, paddingVertical: 8,
   },
   item: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.card,

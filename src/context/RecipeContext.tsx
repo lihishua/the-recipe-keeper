@@ -46,6 +46,16 @@ export interface Recipe {
   createdAt: number;     // timestamp
   notes?: string;
   customTags?: string[]; // free-text tags added by the user
+  customTagsHe?: string[];
+  customTagsEn?: string[];
+  nutrition?: {          // per-100g nutritional estimate (kcal / g)
+    calories: number;
+    protein: number;
+    fat: number;
+    carbs: number;
+    fiber?: number;
+    sugar?: number;
+  };
 }
 
 interface RecipeContextType {

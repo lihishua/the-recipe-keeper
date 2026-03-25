@@ -8,7 +8,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import * as MediaLibrary from 'expo-media-library';
+import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { useLang } from '../../../src/context/LanguageContext';
+import { calculateNutrition } from '../../../src/services/claudeService';
 import { useRecipes, Recipe, RecipeTags, Category } from '../../../src/context/RecipeContext';
 import { Colors, Fonts, Radius } from '../../../src/theme';
 
@@ -47,7 +50,6 @@ const ALL_TAGS: { key: UnifiedTag; icon: React.ComponentProps<typeof MaterialCom
   { key: 'salads',     icon: 'leaf' },
   { key: 'breakfast',  icon: 'egg-outline' },
   { key: 'asian',      icon: 'bowl-mix-outline' },
-  { key: 'other',      icon: 'silverware-fork-knife' },
   { key: 'vegan',      icon: 'sprout' },
   { key: 'vegetarian', icon: 'food-apple-outline' },
   { key: 'glutenFree', icon: 'wheat-off' },
@@ -56,8 +58,8 @@ const ALL_TAGS: { key: UnifiedTag; icon: React.ComponentProps<typeof MaterialCom
 
 export default function EditRecipeScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { t, lang, isRTL, fontRecipe } = useLang();
-  const styles = useMemo(() => makeStyles(fontRecipe), [fontRecipe]);
+  const { t, lang, isRTL, fontRecipe, fontApp } = useLang();
+  const styles = useMemo(() => makeStyles(fontRecipe, fontApp), [fontRecipe, fontApp]);
   const { getRecipeById, updateRecipe } = useRecipes();
   const recipe = getRecipeById(id);
 
@@ -75,13 +77,30 @@ export default function EditRecipeScreen() {
   const [coverUri, setCoverUri] = useState<string | null>(recipe?.sourceUri ?? null);
 
   const pickCoverPhoto = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
+    // If there's an existing image that may not be in the gallery, save it first
+    if (coverUri) {
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status === 'granted') {
+        try { await MediaLibrary.saveToLibraryAsync(coverUri); } catch (_) {}
+      }
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8, allowsEditing: true });
     if (!result.canceled) setCoverUri(result.assets[0].uri);
   };
+
+  const rotateCover = async () => {
+    if (!coverUri) return;
+    const result = await manipulateAsync(coverUri, [{ rotate: 90 }], { compress: 0.9, format: SaveFormat.JPEG });
+    setCoverUri(result.uri);
+  };
   const [prepTime, setPrepTime] = useState(recipe?.tags?.prepTime?.toString() ?? '');
-  const [cookTime, setCookTime] = useState(recipe?.tags?.cookTime?.toString() ?? '');
-  const [bakeTime, setBakeTime] = useState(recipe?.tags?.bakeTime?.toString() ?? '');
+  // combine cookTime + bakeTime into a single field
+  const [cookTime, setCookTime] = useState(() => {
+    const total = (recipe?.tags?.cookTime ?? 0) + (recipe?.tags?.bakeTime ?? 0);
+    return total > 0 ? String(total) : '';
+  });
   const [riseTime, setRiseTime] = useState(recipe?.tags?.riseTime?.toString() ?? '');
+  const [difficulty, setDifficulty] = useState<'easy' | 'medium' | 'hard' | undefined>(recipe?.tags?.difficulty);
   const [selectedTags, setSelectedTags] = useState<UnifiedTag[]>(() => {
     const tags: UnifiedTag[] = [recipe?.category ?? 'other'];
     if (recipe?.tags?.vegan) tags.push('vegan');
@@ -90,7 +109,9 @@ export default function EditRecipeScreen() {
     if (recipe?.tags?.dairyFree) tags.push('dairyFree');
     return tags;
   });
-  const [customTags, setCustomTags]         = useState<string[]>(recipe?.customTags ?? []);
+  const [customTags, setCustomTags]         = useState<string[]>(
+    (lang === 'he' ? recipe?.customTagsHe : recipe?.customTagsEn) ?? recipe?.customTags ?? []
+  );
   const [customTagInput, setCustomTagInput] = useState('');
 
   const toggleTag = (tag: UnifiedTag) =>
@@ -118,8 +139,8 @@ export default function EditRecipeScreen() {
     const tags: RecipeTags = {
       prepTime: prepTime ? parseInt(prepTime) : undefined,
       cookTime: cookTime ? parseInt(cookTime) : undefined,
-      bakeTime: bakeTime ? parseInt(bakeTime) : undefined,
       riseTime: riseTime ? parseInt(riseTime) : undefined,
+      difficulty,
       vegan:      selectedTags.includes('vegan'),
       vegetarian: selectedTags.includes('vegan') || selectedTags.includes('vegetarian'),
       glutenFree: selectedTags.includes('glutenFree'),
@@ -138,10 +159,17 @@ export default function EditRecipeScreen() {
       stepsHe: lang === 'he' ? filteredSteps : recipe.stepsHe ?? filteredSteps,
       stepsEn: lang === 'en' ? filteredSteps : recipe.stepsEn ?? filteredSteps,
       tags, category, emoji: selectedIcon.emoji,
+      sourceUri: coverUri ?? undefined,
       customTags: customTags.filter(Boolean),
+      customTagsHe: lang === 'he' ? customTags.filter(Boolean) : recipe.customTagsHe,
+      customTagsEn: lang === 'en' ? customTags.filter(Boolean) : recipe.customTagsEn,
     };
     await updateRecipe(updated);
     router.back();
+    // Calculate nutrition in background and update silently
+    calculateNutrition(filtered)
+      .then(nutrition => { if (nutrition) updateRecipe({ ...updated, nutrition }); })
+      .catch(() => {});
   };
 
   const rowDir = isRTL ? 'row-reverse' : 'row';
@@ -171,23 +199,28 @@ export default function EditRecipeScreen() {
 
               {/* Illustrated icon picker */}
               <View style={styles.iconPickerWrap}>
-                <TouchableOpacity style={[styles.heroIcon, { backgroundColor: selectedIcon.bg }]} onPress={pickCoverPhoto}>
+                <TouchableOpacity style={[styles.heroIcon, { backgroundColor: coverUri ? BG : selectedIcon.bg }]} onPress={pickCoverPhoto}>
                   {coverUri
-                    ? <Image source={{ uri: coverUri }} style={styles.heroImage} />
+                    ? <Image key={coverUri} source={{ uri: coverUri }} style={styles.heroImage} resizeMode="contain" />
                     : <MaterialCommunityIcons name={selectedIcon.iconName} size={48} color={selectedIcon.color} />
                   }
                   <View style={styles.cameraOverlay}>
                     <MaterialCommunityIcons name="camera-plus-outline" size={14} color="#fff" />
                   </View>
+                  {coverUri && (
+                    <TouchableOpacity style={styles.rotateOverlay} onPress={e => { e.stopPropagation?.(); rotateCover(); }}>
+                      <MaterialCommunityIcons name="rotate-right" size={14} color="#fff" />
+                    </TouchableOpacity>
+                  )}
                 </TouchableOpacity>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.iconStrip}>
                   {RECIPE_ICONS.map(opt => (
                     <TouchableOpacity
                       key={opt.iconName}
-                      style={[styles.iconOpt, { backgroundColor: opt.bg }, selectedIcon.iconName === opt.iconName && styles.iconOptActive]}
+                      style={[styles.iconOpt, selectedIcon.iconName === opt.iconName && styles.iconOptActive]}
                       onPress={() => { setSelectedIcon(opt); setCoverUri(null); }}
                     >
-                      <MaterialCommunityIcons name={opt.iconName} size={20} color={opt.color} />
+                      <MaterialCommunityIcons name={opt.iconName} size={20} color="rgba(54,49,45,0.5)" />
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
@@ -207,10 +240,9 @@ export default function EditRecipeScreen() {
                 {/* Time row */}
                 <View style={[styles.timeRow, { flexDirection: rowDir }]}>
                   {[
-                    { val: prepTime, set: setPrepTime, icon: 'clock-outline' as const,     ph: lang === 'he' ? 'הכנה'  : 'Prep' },
-                    { val: cookTime, set: setCookTime, icon: 'pot-steam-outline' as const, ph: lang === 'he' ? 'בישול' : 'Cook' },
-                    { val: bakeTime, set: setBakeTime, icon: 'oven' as const,              ph: lang === 'he' ? 'אפייה' : 'Bake' },
-                    { val: riseTime, set: setRiseTime, icon: 'timer-sand' as const,        ph: lang === 'he' ? 'תפיחה' : 'Rise' },
+                    { val: prepTime, set: setPrepTime, icon: 'clock-outline' as const,     ph: lang === 'he' ? 'הכנה'       : 'Prep' },
+                    { val: cookTime, set: setCookTime, icon: 'pot-steam-outline' as const, ph: lang === 'he' ? 'בישול/אפייה' : 'Cook/Bake' },
+                    { val: riseTime, set: setRiseTime, icon: 'timer-sand' as const,        ph: lang === 'he' ? 'התפחה'      : 'Rise' },
                   ].map(({ val, set, icon, ph }) => (
                     <View key={ph} style={styles.timeItem}>
                       <MaterialCommunityIcons name={icon} size={16} color={INK} />
@@ -226,6 +258,27 @@ export default function EditRecipeScreen() {
                     </View>
                   ))}
                 </View>
+
+                {/* Difficulty row */}
+                <View style={[styles.diffRow, { flexDirection: rowDir, marginTop: 10 }]}>
+                  {(['easy', 'medium', 'hard'] as const).map(d => {
+                    const labels = { easy: { he: 'קל', en: 'Easy' }, medium: { he: 'בינוני', en: 'Medium' }, hard: { he: 'קשה', en: 'Hard' } };
+                    const colors = { easy: '#4caf50', medium: '#df7b3e', hard: '#e53935' };
+                    const active = difficulty === d;
+                    return (
+                      <TouchableOpacity
+                        key={d}
+                        style={[styles.diffChip, active && { backgroundColor: colors[d], borderColor: colors[d] }]}
+                        onPress={() => setDifficulty(prev => prev === d ? undefined : d)}
+                      >
+                        <MaterialCommunityIcons name="chef-hat" size={13} color={active ? '#fff' : INK} />
+                        <Text style={[styles.diffChipText, active && { color: '#fff' }]}>
+                          {lang === 'he' ? labels[d].he : labels[d].en}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
               </View>
             </View>
           </View>
@@ -239,7 +292,7 @@ export default function EditRecipeScreen() {
 
             {ingredients.map((ing, i) => (
               <View key={i} style={[styles.ingRow, { flexDirection: rowDir }]}>
-                <Text style={styles.ingHeart}>♡</Text>
+                <MaterialCommunityIcons name="heart-outline" size={16} color={BG_DARK} />
                 <TextInput
                   style={[styles.ingInput, { flex: 1, textAlign: isRTL ? 'right' : 'left' }]}
                   value={ing}
@@ -249,7 +302,7 @@ export default function EditRecipeScreen() {
                 />
                 {ingredients.length > 1 && (
                   <TouchableOpacity onPress={() => removeIng(i)} style={styles.removeBtn}>
-                    <MaterialCommunityIcons name="minus-circle-outline" size={18} color="rgba(211,47,47,0.7)" />
+                    <MaterialCommunityIcons name="minus-circle-outline" size={18} color="rgba(74,74,74,0.6)" />
                   </TouchableOpacity>
                 )}
               </View>
@@ -280,7 +333,7 @@ export default function EditRecipeScreen() {
                 />
                 {steps.length > 1 && (
                   <TouchableOpacity onPress={() => removeStep(i)} style={styles.removeBtn}>
-                    <MaterialCommunityIcons name="minus-circle-outline" size={18} color="rgba(211,47,47,0.7)" />
+                    <MaterialCommunityIcons name="minus-circle-outline" size={18} color="rgba(74,74,74,0.6)" />
                   </TouchableOpacity>
                 )}
               </View>
@@ -345,7 +398,7 @@ export default function EditRecipeScreen() {
   );
 }
 
-function makeStyles(fontRecipe: string) {
+function makeStyles(fontRecipe: string, fontApp: string) {
   return StyleSheet.create({
   safe: { flex: 1, backgroundColor: BG },
 
@@ -358,13 +411,13 @@ function makeStyles(fontRecipe: string) {
     backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: Radius.pill,
     paddingHorizontal: 14, paddingVertical: 7,
   },
-  cancelText: { color: 'rgba(255,255,255,0.85)', fontFamily: fontRecipe, fontSize: 15 },
-  topTitle: { color: '#fff', fontFamily: fontRecipe, fontSize: 18 },
+  cancelText: { color: 'rgba(255,255,255,0.85)', fontFamily: fontApp, fontSize: 15 },
+  topTitle: { color: '#fff', fontFamily: fontApp, fontSize: 18 },
   saveBtn: {
     backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: Radius.pill,
     paddingHorizontal: 14, paddingVertical: 7,
   },
-  saveText: { color: '#fff', fontFamily: fontRecipe, fontSize: 15, fontWeight: '700' },
+  saveText: { color: '#fff', fontFamily: fontApp, fontSize: 15, fontWeight: '700' },
 
   // Header
   header: { padding: 20, paddingBottom: 24 },
@@ -380,10 +433,16 @@ function makeStyles(fontRecipe: string) {
     position: 'absolute', bottom: 6, right: 6,
     backgroundColor: 'rgba(54,49,45,0.5)', borderRadius: 10, padding: 4,
   },
+  rotateOverlay: {
+    position: 'absolute', bottom: 6, left: 6,
+    backgroundColor: 'rgba(54,49,45,0.5)', borderRadius: 10,
+    padding: 4,
+  },
   iconStrip: { maxWidth: 110 },
   iconOpt: {
     width: 34, height: 34, borderRadius: Radius.md,
     borderWidth: 2, borderColor: 'transparent',
+    backgroundColor: 'rgba(54,49,45,0.07)',
     alignItems: 'center', justifyContent: 'center', marginRight: 4,
   },
   iconOptActive: { borderColor: INK },
@@ -468,5 +527,14 @@ function makeStyles(fontRecipe: string) {
     width: 36, height: 36, borderRadius: 18,
     backgroundColor: BG_DARK, alignItems: 'center', justifyContent: 'center',
   },
+
+  diffRow: { gap: 6, flexWrap: 'wrap' },
+  diffChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: Radius.pill,
+    borderWidth: 1.5, borderColor: 'rgba(54,49,45,0.3)',
+    backgroundColor: 'rgba(255,255,255,0.4)',
+  },
+  diffChipText: { fontFamily: fontRecipe, fontSize: 12, color: INK },
   });
 }

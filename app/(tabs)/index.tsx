@@ -16,9 +16,9 @@ import { draftStore } from '../../src/services/draftStore';
 import { Colors, Radius, Shadow } from '../../src/theme';
 
 // ── Types ────────────────────────────────────────────────────────────────────
-type SortOrder = 'alpha' | 'newest';
+type SortOrder = 'newest' | 'oldest' | 'alpha-asc' | 'alpha-desc' | 'time-asc' | 'time-desc';
 type UnifiedTag = Category | 'vegan' | 'vegetarian' | 'glutenFree' | 'dairyFree';
-type ActivePanel = 'search' | 'filter' | null;
+type ActivePanel = 'search' | 'filter' | 'sort' | null;
 
 // Category line-art icons (monochrome, same style for all cards)
 const CATEGORY_ICON: Record<string, React.ComponentProps<typeof MaterialCommunityIcons>['name']> = {
@@ -36,7 +36,6 @@ const TAG_META: { key: UnifiedTag; icon: React.ComponentProps<typeof MaterialCom
   { key: 'salads',     icon: 'leaf' },
   { key: 'breakfast',  icon: 'egg-outline' },
   { key: 'asian',      icon: 'bowl-mix-outline' },
-  { key: 'other',      icon: 'silverware-fork-knife' },
   { key: 'vegan',      icon: 'sprout' },
   { key: 'vegetarian', icon: 'food-apple-outline' },
   { key: 'glutenFree', icon: 'barley' },
@@ -59,7 +58,7 @@ export default function HomeScreen() {
 
   // ── View state
   const [isGrid, setIsGrid]             = useState(true);
-  const [sortOrder, setSortOrder]       = useState<SortOrder>('alpha');
+  const [sortOrder, setSortOrder]       = useState<SortOrder>('newest');
   const [query, setQuery]               = useState('');
   const [selectedTags, setSelectedTags]           = useState<UnifiedTag[]>([]);
   const [selectedCustomTags, setSelectedCustomTags] = useState<string[]>([]);
@@ -194,7 +193,33 @@ export default function HomeScreen() {
       return ta.localeCompare(tb, lang === 'he' ? 'he' : 'en');
     }), [recipes, lang]);
 
-  const allSorted = sortOrder === 'alpha' ? byAlpha : byNewest;
+  const byOldest = useMemo(() =>
+    [...recipes].sort((a, b) => a.createdAt - b.createdAt), [recipes]);
+
+  const byAlphaDesc = useMemo(() =>
+    [...recipes].sort((a, b) => {
+      const ta = ((lang === 'he' ? a.titleHe : a.titleEn) ?? a.title).toLowerCase();
+      const tb = ((lang === 'he' ? b.titleHe : b.titleEn) ?? b.title).toLowerCase();
+      return tb.localeCompare(ta, lang === 'he' ? 'he' : 'en');
+    }), [recipes, lang]);
+
+  const byTimeAsc = useMemo(() =>
+    [...recipes].sort((a, b) => (computeTotalTime(a.tags) || 999) - (computeTotalTime(b.tags) || 999)), [recipes]);
+
+  const byTimeDesc = useMemo(() =>
+    [...recipes].sort((a, b) => (computeTotalTime(b.tags) || 0) - (computeTotalTime(a.tags) || 0)), [recipes]);
+
+  const allSorted = useMemo(() => {
+    switch (sortOrder) {
+      case 'newest':     return byNewest;
+      case 'oldest':     return byOldest;
+      case 'alpha-asc':  return byAlpha;
+      case 'alpha-desc': return byAlphaDesc;
+      case 'time-asc':   return byTimeAsc;
+      case 'time-desc':  return byTimeDesc;
+      default:           return byNewest;
+    }
+  }, [sortOrder, byNewest, byOldest, byAlpha, byAlphaDesc, byTimeAsc, byTimeDesc]);
 
   const displayed = useMemo(() => {
     let base = allSorted;
@@ -237,7 +262,7 @@ export default function HomeScreen() {
   const hasActiveFilters = selectedTags.length > 0 || selectedCustomTags.length > 0;
 
   // ── Toolbar helpers ───────────────────────────────────────────────────────
-  const togglePanel = (panel: 'search' | 'filter') => {
+  const togglePanel = (panel: 'search' | 'filter' | 'sort') => {
     Keyboard.dismiss();
     setActivePanel(prev => prev === panel ? null : panel);
   };
@@ -404,7 +429,7 @@ export default function HomeScreen() {
     }
     return (
       <View style={[styles.thumbPlaceholder, { height: size }]}>
-        <MaterialCommunityIcons name={icon} size={size * 0.42} color={Colors.text2} />
+        <MaterialCommunityIcons name={icon} size={size * 0.42} color="#4a4a4a" />
       </View>
     );
   };
@@ -415,15 +440,14 @@ export default function HomeScreen() {
     return (
       <TouchableOpacity style={styles.gridItem} onPress={() => router.push(`/recipe/${item.id}`)}>
         <RecipeThumb item={item} size={110} />
-        <Text style={[styles.gridTitle, { textAlign: isRTL ? 'right' : 'left', fontFamily: fontRecipe }]} numberOfLines={2}>
-          {title}
-        </Text>
-        {total > 0 && (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-            <MaterialCommunityIcons name="clock-outline" size={11} color={Colors.text3} />
-            <Text style={styles.gridMeta}>{total} {t('minutes')}</Text>
-          </View>
-        )}
+        <View style={[styles.gridTitleRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+          <Text style={[styles.gridTitle, { textAlign: isRTL ? 'right' : 'left', fontFamily: fontRecipe }]} numberOfLines={1}>
+            {title}
+          </Text>
+          {total > 0 && (
+            <Text style={[styles.gridMeta, { fontFamily: fontRecipe }]}>{total}{t('min')}</Text>
+          )}
+        </View>
       </TouchableOpacity>
     );
   };
@@ -439,12 +463,12 @@ export default function HomeScreen() {
         <View style={{ flex: 1 }}>
           <Text style={[styles.listTitle, { textAlign: isRTL ? 'right' : 'left', fontFamily: fontRecipe }]}>{title}</Text>
           <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', gap: 4 }}>
-            <Text style={styles.listMeta}>{t(item.category as any)}</Text>
+            <Text style={[styles.listMeta, { fontFamily: fontRecipe }]}>{t(item.category as any)}</Text>
             {total > 0 && (
               <>
-                <Text style={styles.listMeta}> · </Text>
-                <MaterialCommunityIcons name="clock-outline" size={12} color={Colors.text3} />
-                <Text style={styles.listMeta}>{total} {t('minutes')}</Text>
+                <Text style={[styles.listMeta, { fontFamily: fontRecipe }]}> · </Text>
+                <MaterialCommunityIcons name="clock-outline" size={12} color="rgba(255,255,255,0.8)" />
+                <Text style={[styles.listMeta, { fontFamily: fontRecipe }]}>{total} {t('minutes')}</Text>
               </>
             )}
           </View>
@@ -502,10 +526,13 @@ export default function HomeScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.toolBtn, sortOrder === 'newest' && styles.toolBtnActive]}
-            onPress={() => { setSortOrder(s => s === 'alpha' ? 'newest' : 'alpha'); setActivePanel(null); }}
+            style={[styles.toolBtn, activePanel === 'sort' && styles.toolBtnActive]}
+            onPress={() => togglePanel('sort')}
           >
-            <MaterialCommunityIcons name="clock-outline" size={20} color={sortOrder === 'newest' ? Colors.sun : '#fff'} />
+            <View style={{ width: 20, height: 20 }}>
+              <MaterialCommunityIcons name="arrow-up-thin" size={20} color={activePanel === 'sort' ? Colors.sun : '#fff'} style={{ position: 'absolute', left: -4, top: -2 }} />
+              <MaterialCommunityIcons name="arrow-down-thin" size={20} color={activePanel === 'sort' ? Colors.sun : '#fff'} style={{ position: 'absolute', right: -4, bottom: -2 }} />
+            </View>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.toolBtn} onPress={() => setIsGrid(v => !v)}>
@@ -583,6 +610,36 @@ export default function HomeScreen() {
       )}
 
 
+      {/* ── SORT PANEL ── */}
+      {activePanel === 'sort' && (
+        <View style={styles.panelRow}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 8, flexDirection: isRTL ? 'row-reverse' : 'row' }}>
+            {([
+              { key: 'newest',     icon: 'clock-check-outline',         labelHe: 'חדש ביותר',  labelEn: 'Newest' },
+              { key: 'oldest',     icon: 'clock-outline',               labelHe: 'ישן ביותר',  labelEn: 'Oldest' },
+              { key: 'alpha-asc',  icon: 'sort-alphabetical-ascending',  labelHe: 'א → ת',      labelEn: 'A → Z' },
+              { key: 'alpha-desc', icon: 'sort-alphabetical-descending', labelHe: 'ת → א',      labelEn: 'Z → A' },
+              { key: 'time-asc',   icon: 'timer-outline',               labelHe: 'זמן הכנה ↑', labelEn: 'Time ↑' },
+              { key: 'time-desc',  icon: 'timer',                       labelHe: 'זמן הכנה ↓', labelEn: 'Time ↓' },
+            ] as { key: SortOrder; icon: React.ComponentProps<typeof MaterialCommunityIcons>['name']; labelHe: string; labelEn: string }[]).map(opt => {
+              const active = sortOrder === opt.key;
+              return (
+                <TouchableOpacity key={opt.key}
+                  style={[styles.filterChip, active && styles.filterChipActive]}
+                  onPress={() => setSortOrder(opt.key)}
+                >
+                  <MaterialCommunityIcons name={opt.icon} size={14} color={active ? '#fff' : Colors.text2} />
+                  <Text style={[styles.filterChipText, active && styles.filterChipTextActive, { fontFamily: fontHe }]}>
+                    {lang === 'he' ? opt.labelHe : opt.labelEn}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
+
       {/* ── RECIPE LIST / GRID ── */}
       <ImageBackground
         source={require('../../assets/images/background.png')}
@@ -596,7 +653,7 @@ export default function HomeScreen() {
             keyExtractor={r => r.id}
             numColumns={2}
             contentContainerStyle={styles.gridContent}
-            columnWrapperStyle={{ gap: 12 }}
+            columnWrapperStyle={{ gap: 12, flexDirection: isRTL ? 'row-reverse' : 'row' }}
             renderItem={({ item }) => <GridItem item={item} />}
             ListEmptyComponent={<EmptyState />}
             keyboardShouldPersistTaps="handled"
@@ -606,7 +663,7 @@ export default function HomeScreen() {
             key="list"
             data={displayed}
             keyExtractor={r => r.id}
-            contentContainerStyle={{ paddingBottom: 120 }}
+            contentContainerStyle={{ paddingTop: 10, paddingBottom: 120 }}
             renderItem={({ item }) => <ListItem item={item} />}
             ListEmptyComponent={<EmptyState />}
             keyboardShouldPersistTaps="handled"
@@ -766,9 +823,9 @@ const styles = StyleSheet.create({
   logoImg: { width: '100%', height: Dimensions.get('window').height * 0.16 },
   langToggle: {
     paddingHorizontal: 10, paddingVertical: 7, borderRadius: Radius.pill,
-    backgroundColor: Colors.mauve,
+    backgroundColor: '#fff',
   },
-  langText: { color: '#3a3a3a', fontSize: 15 },
+  langText: { color: Colors.mauve, fontSize: 15 },
 
   toolbar: {
     backgroundColor: Colors.blue, paddingHorizontal: 12, paddingVertical: 8,
@@ -806,32 +863,35 @@ const styles = StyleSheet.create({
   // Thumbnail
   thumbPlaceholder: {
     width: '100%', borderRadius: Radius.md,
-    backgroundColor: Colors.sun, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center',
   },
 
   // Grid
   gridContent: { padding: 12, gap: 12, paddingBottom: 120 },
   gridItem: {
     width: (Dimensions.get('window').width - 12 * 2 - 12) / 2,
-    backgroundColor: Colors.card, borderRadius: Radius.lg,
-    padding: 10, borderWidth: 1.5, borderColor: Colors.border, ...Shadow.sm,
-    overflow: 'hidden',
+    backgroundColor: Colors.sun, borderRadius: Radius.lg,
+    padding: 10, ...Shadow.sm, overflow: 'hidden',
   },
-  gridTitle: { fontSize: 14, color: Colors.text, marginTop: 8, marginBottom: 4, lineHeight: 19 },
-  gridMeta: { fontSize: 11, color: Colors.text3 },
+  gridTitleRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    marginTop: 8, marginBottom: 2,
+  },
+  gridTitle: { flex: 1, fontSize: 14, color: '#fff', lineHeight: 19 },
+  gridMeta: { fontSize: 11, color: 'rgba(255,255,255,0.8)' },
 
   // List
   listItem: {
-    backgroundColor: Colors.card, paddingHorizontal: 16, paddingVertical: 12,
-    borderBottomWidth: 1, borderBottomColor: Colors.sunLighter,
+    backgroundColor: Colors.sun, paddingHorizontal: 16, paddingVertical: 12,
+    borderRadius: Radius.lg, marginHorizontal: 12, marginBottom: 10,
     alignItems: 'center', gap: 14,
   },
   listThumbWrap: {
     width: 52, height: 52, borderRadius: Radius.md, overflow: 'hidden',
   },
-  listTitle: { fontSize: 16, color: Colors.text, marginBottom: 3 },
-  listMeta: { fontSize: 12, color: Colors.text3 },
-  arrow: { color: Colors.text3, fontSize: 18 },
+  listTitle: { fontSize: 16, color: '#fff', marginBottom: 3 },
+  listMeta: { fontSize: 12, color: 'rgba(255,255,255,0.8)' },
+  arrow: { color: 'rgba(255,255,255,0.6)', fontSize: 18 },
 
   // Empty state
   empty: { alignItems: 'center', paddingTop: 80, gap: 10 },

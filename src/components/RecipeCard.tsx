@@ -1,6 +1,7 @@
 // src/components/RecipeCard.tsx
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Recipe } from '../context/RecipeContext';
 import { useLang } from '../context/LanguageContext';
 import { Colors, Fonts, Radius, Shadow } from '../theme';
@@ -9,6 +10,22 @@ interface Props {
   recipe: Recipe;
   onPress: () => void;
   horizontal?: boolean;
+}
+
+function CardImage({ uri, size }: { uri?: string; size: 'grid' | 'list' }) {
+  const boxStyle = size === 'grid' ? styles.imageBox : styles.hImageBox;
+  if (uri) {
+    return (
+      <View style={boxStyle}>
+        <Image source={{ uri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+      </View>
+    );
+  }
+  return (
+    <View style={[boxStyle, styles.imagePlaceholder]}>
+      <MaterialCommunityIcons name="silverware-fork-knife" size={size === 'grid' ? 36 : 28} color="#9a9a9a" />
+    </View>
+  );
 }
 
 export function RecipeCard({ recipe, onPress, horizontal }: Props) {
@@ -24,9 +41,7 @@ export function RecipeCard({ recipe, onPress, horizontal }: Props) {
   if (horizontal) {
     return (
       <TouchableOpacity style={[styles.hCard, Shadow.sm]} onPress={onPress} activeOpacity={0.85}>
-        <View style={styles.hEmoji}>
-          <Text style={styles.hEmojiText}>{recipe.emoji}</Text>
-        </View>
+        <CardImage uri={recipe.sourceUri} size="list" />
         <View style={styles.hBody}>
           <View style={styles.tagPill}>
             <Text style={styles.tagText}>{t(recipe.category as any)}</Text>
@@ -40,9 +55,7 @@ export function RecipeCard({ recipe, onPress, horizontal }: Props) {
 
   return (
     <TouchableOpacity style={[styles.card, Shadow.sm]} onPress={onPress} activeOpacity={0.85}>
-      <View style={styles.emojiBox}>
-        <Text style={styles.emojiText}>{recipe.emoji}</Text>
-      </View>
+      <CardImage uri={recipe.sourceUri} size="grid" />
       <View style={styles.body}>
         <View style={styles.tagPill}>
           <Text style={styles.tagText}>{t(recipe.category as any)}</Text>
@@ -56,52 +69,47 @@ export function RecipeCard({ recipe, onPress, horizontal }: Props) {
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: Colors.card,
+    backgroundColor: Colors.sun,
     borderRadius: Radius.lg,
-    borderWidth: 1.5,
-    borderColor: Colors.border,
     width: 180,
     overflow: 'hidden',
   },
-  emojiBox: {
+  imageBox: {
     height: 110,
-    backgroundColor: Colors.warm,
+    overflow: 'hidden',
+  },
+  imagePlaceholder: {
+    backgroundColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  emojiText: { fontSize: 52 },
   body: { padding: 12 },
   tagPill: {
-    backgroundColor: Colors.sunLighter,
+    backgroundColor: 'rgba(255,255,255,0.25)',
     borderRadius: Radius.pill,
     paddingHorizontal: 8,
     paddingVertical: 3,
     alignSelf: 'flex-start',
     marginBottom: 6,
   },
-  tagText: { fontSize: 10, color: Colors.sunDark, fontWeight: '600', fontFamily: 'Gan' },
-  title: { fontSize: 16, fontFamily: Fonts.dybbuk, color: Colors.text, marginBottom: 4, lineHeight: 22 },
-  meta: { fontSize: 11, color: Colors.text3, fontFamily: 'Gan' },
+  tagText: { fontSize: 10, color: '#fff', fontWeight: '600', fontFamily: 'Gan' },
+  title: { fontSize: 16, fontFamily: Fonts.dybbuk, color: '#fff', marginBottom: 4, lineHeight: 22 },
+  meta: { fontSize: 11, color: 'rgba(255,255,255,0.8)', fontFamily: 'Gan' },
 
   // Horizontal list item variant
   hCard: {
-    backgroundColor: Colors.card,
+    backgroundColor: Colors.sun,
     borderRadius: Radius.lg,
-    borderWidth: 1.5,
-    borderColor: Colors.border,
     flexDirection: 'row',
     overflow: 'hidden',
     marginHorizontal: 16,
     marginBottom: 12,
   },
-  hEmoji: {
+  hImageBox: {
     width: 80,
-    backgroundColor: Colors.warm,
-    alignItems: 'center',
-    justifyContent: 'center',
+    overflow: 'hidden',
   },
-  hEmojiText: { fontSize: 36 },
   hBody: { flex: 1, padding: 12 },
-  hTitle: { fontSize: 17, fontFamily: Fonts.dybbuk, color: Colors.text, marginBottom: 4 },
-  hMeta: { fontSize: 12, color: Colors.text3, fontFamily: 'Gan' },
+  hTitle: { fontSize: 17, fontFamily: Fonts.dybbuk, color: '#fff', marginBottom: 4 },
+  hMeta: { fontSize: 12, color: 'rgba(255,255,255,0.8)', fontFamily: 'Gan' },
 });
