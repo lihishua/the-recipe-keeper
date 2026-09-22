@@ -2,7 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import {
   View, Text, TextInput, ScrollView, TouchableOpacity, Image,
-  StyleSheet, KeyboardAvoidingView, Platform,
+  StyleSheet, KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -11,7 +11,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { useLang } from '../../../src/context/LanguageContext';
-import { calculateNutrition } from '../../../src/services/claudeService';
+import { calculateNutrition, validateImageContent } from '../../../src/services/claudeService';
 import { useRecipes, Recipe, RecipeTags, Category } from '../../../src/context/RecipeContext';
 import { Colors, Fonts, Radius } from '../../../src/theme';
 
@@ -60,7 +60,7 @@ export default function EditRecipeScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { t, lang, isRTL, fontRecipe, fontApp } = useLang();
   const styles = useMemo(() => makeStyles(fontRecipe, fontApp), [fontRecipe, fontApp]);
-  const { getRecipeById, updateRecipe } = useRecipes();
+  const { getRecipeById, updateRecipe, recipes } = useRecipes();
   const recipe = getRecipeById(id);
 
   const [titleHe, setTitleHe]   = useState(recipe?.titleHe ?? recipe?.title ?? '');
@@ -85,7 +85,19 @@ export default function EditRecipeScreen() {
       }
     }
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8, allowsEditing: true });
-    if (!result.canceled) setCoverUri(result.assets[0].uri);
+    if (result.canceled) return;
+    const uri = result.assets[0].uri;
+    const check = await validateImageContent(uri);
+    if (!check.safe) {
+      Alert.alert(
+        lang === 'he' ? 'תמונה לא מתאימה' : 'Inappropriate image',
+        lang === 'he'
+          ? 'התמונה שנבחרה מכילה תוכן שאינו מתאים לאפליקציה.'
+          : 'The selected image contains content not suitable for this app.',
+      );
+      return;
+    }
+    setCoverUri(uri);
   };
 
   const rotateCover = async () => {
@@ -113,6 +125,9 @@ export default function EditRecipeScreen() {
     (lang === 'he' ? recipe?.customTagsHe : recipe?.customTagsEn) ?? recipe?.customTags ?? []
   );
   const [customTagInput, setCustomTagInput] = useState('');
+  const [attribution, setAttribution]       = useState(recipe?.attribution ?? '');
+  const [yieldCount, setYieldCount]         = useState(recipe?.yield?.toString() ?? '');
+  const [saving, setSaving] = useState(false);
 
   const toggleTag = (tag: UnifiedTag) =>
     setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]);
@@ -124,6 +139,15 @@ export default function EditRecipeScreen() {
   };
   const removeCustomTag = (tag: string) => setCustomTags(prev => prev.filter(t => t !== tag));
 
+  const knownCustomTags = useMemo(() => {
+    const seen = new Set<string>();
+    recipes.forEach(r => {
+      const tags = (lang === 'he' ? r.customTagsHe : r.customTagsEn) ?? r.customTags ?? [];
+      tags.forEach(t => seen.add(t));
+    });
+    return [...seen].filter(t => !customTags.includes(t));
+  }, [recipes, lang, customTags]);
+
   if (!recipe) return null;
 
   const updateIng  = (i: number, v: string) => { const n = [...ingredients]; n[i] = v; setIngredients(n); };
@@ -134,6 +158,8 @@ export default function EditRecipeScreen() {
   const removeStep = (i: number) => setSteps(steps.filter((_, j) => j !== i));
 
   const handleSave = async () => {
+    if (saving) return;
+    setSaving(true);
     const catTags = selectedTags.filter(t => CATEGORY_KEYS.includes(t as Category));
     const category: Category = (catTags[0] as Category) ?? 'other';
     const tags: RecipeTags = {
@@ -163,13 +189,12 @@ export default function EditRecipeScreen() {
       customTags: customTags.filter(Boolean),
       customTagsHe: lang === 'he' ? customTags.filter(Boolean) : recipe.customTagsHe,
       customTagsEn: lang === 'en' ? customTags.filter(Boolean) : recipe.customTagsEn,
+      attribution: attribution.trim() || undefined,
+      yield: yieldCount ? parseInt(yieldCount) : undefined,
     };
-    await updateRecipe(updated);
+    const nutrition = await calculateNutrition(filtered, yieldCount ? parseInt(yieldCount) : undefined).catch(() => null);
+    await updateRecipe({ ...updated, nutrition: nutrition ?? recipe.nutrition });
     router.back();
-    // Calculate nutrition in background and update silently
-    calculateNutrition(filtered)
-      .then(nutrition => { if (nutrition) updateRecipe({ ...updated, nutrition }); })
-      .catch(() => {});
   };
 
   const rowDir = isRTL ? 'row-reverse' : 'row';
@@ -186,8 +211,8 @@ export default function EditRecipeScreen() {
             <Text style={styles.cancelText}>{t('cancel')}</Text>
           </TouchableOpacity>
           <Text style={styles.topTitle}>{t('edit')}</Text>
-          <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
-            <Text style={styles.saveText}>{t('save')}</Text>
+          <TouchableOpacity style={[styles.saveBtn, saving && { opacity: 0.6 }]} onPress={handleSave} disabled={saving}>
+            <Text style={styles.saveText}>{saving ? '...' : t('save')}</Text>
           </TouchableOpacity>
         </View>
 
@@ -346,6 +371,43 @@ export default function EditRecipeScreen() {
 
           <View style={styles.divider} />
 
+          {/* ── ATTRIBUTION ── */}
+          <View style={styles.section}>
+            <Text style={styles.sectionHeader}>{lang === 'he' ? 'של מי המתכון?' : 'Whose recipe?'}</Text>
+            <View style={styles.sectionLine} />
+            <View style={[styles.linkRow, { flexDirection: rowDir }]}>
+              <MaterialCommunityIcons name="account-heart-outline" size={18} color={BG_DARK} style={{ marginTop: 2 }} />
+              <TextInput
+                style={[styles.linkInput, { flex: 1, textAlign: isRTL ? 'right' : 'left' }]}
+                value={attribution}
+                onChangeText={setAttribution}
+                placeholder={lang === 'he' ? 'למשל: מתכון של סבתא, @chefnir...' : "e.g. Grandma's recipe, @chefnir..."}
+                placeholderTextColor="rgba(54,49,45,0.35)"
+              />
+            </View>
+          </View>
+
+          <View style={styles.divider} />
+
+          {/* ── YIELD ── */}
+          <View style={styles.section}>
+            <Text style={styles.sectionHeader}>{lang === 'he' ? 'כמה יוצא?' : 'How many servings?'}</Text>
+            <View style={styles.sectionLine} />
+            <View style={[styles.linkRow, { flexDirection: rowDir }]}>
+              <MaterialCommunityIcons name="counter" size={18} color={BG_DARK} style={{ marginTop: 2 }} />
+              <TextInput
+                style={[styles.linkInput, { flex: 1, textAlign: isRTL ? 'right' : 'left' }]}
+                value={yieldCount}
+                onChangeText={setYieldCount}
+                placeholder={lang === 'he' ? 'מספר מנות / עוגיות / פנקייקים...' : 'Number of dishes / cookies / pancakes...'}
+                placeholderTextColor="rgba(54,49,45,0.35)"
+                keyboardType="number-pad"
+              />
+            </View>
+          </View>
+
+          <View style={styles.divider} />
+
           {/* ── TAGS (unified: category + dietary, multi-select) ── */}
           <View style={styles.section}>
             <Text style={styles.sectionHeader}>{lang === 'he' ? 'תגיות' : 'Tags'}</Text>
@@ -374,6 +436,17 @@ export default function EditRecipeScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+            {/* Tags bank — existing tags from other recipes */}
+            {knownCustomTags.length > 0 && (
+              <View style={[styles.tagBankRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+                {knownCustomTags.map(tag => (
+                  <TouchableOpacity key={tag} style={styles.tagBankChip} onPress={() => setCustomTags(prev => [...prev, tag])}>
+                    <Text style={styles.tagBankText}>{tag}</Text>
+                    <MaterialCommunityIcons name="plus" size={12} color={BG_DARK} />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
             {/* Custom tag input */}
             <View style={[styles.customTagRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
               <TextInput
@@ -527,6 +600,16 @@ function makeStyles(fontRecipe: string, fontApp: string) {
     width: 36, height: 36, borderRadius: 18,
     backgroundColor: BG_DARK, alignItems: 'center', justifyContent: 'center',
   },
+  tagBankRow: {
+    flexWrap: 'wrap', gap: 6, marginTop: 10, marginBottom: 2,
+  },
+  tagBankChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(24,114,125,0.07)', borderRadius: Radius.pill,
+    borderWidth: 1, borderColor: 'rgba(24,114,125,0.3)',
+    paddingHorizontal: 10, paddingVertical: 5,
+  },
+  tagBankText: { fontFamily: fontRecipe, fontSize: 12, color: BG_DARK },
 
   diffRow: { gap: 6, flexWrap: 'wrap' },
   diffChip: {
@@ -536,5 +619,13 @@ function makeStyles(fontRecipe: string, fontApp: string) {
     backgroundColor: 'rgba(255,255,255,0.4)',
   },
   diffChipText: { fontFamily: fontRecipe, fontSize: 12, color: INK },
+
+  linkRow: { alignItems: 'center', gap: 10 },
+  linkInput: {
+    fontFamily: fontRecipe, fontSize: 14, color: INK,
+    backgroundColor: 'rgba(255,255,255,0.5)', borderRadius: Radius.pill,
+    borderWidth: 1.5, borderColor: 'rgba(54,49,45,0.2)',
+    paddingHorizontal: 14, paddingVertical: 8,
+  },
   });
 }

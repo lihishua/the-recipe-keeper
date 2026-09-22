@@ -1,8 +1,9 @@
 // app/scan/album.tsx
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
   Image, ActivityIndicator, Alert, Dimensions, ScrollView,
+  TextInput, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -10,21 +11,46 @@ import * as MediaLibrary from 'expo-media-library';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLang } from '../../src/context/LanguageContext';
 import { useRecipes, Recipe } from '../../src/context/RecipeContext';
-import { useAlbumScanner, ScanCandidate } from '../../src/hooks/useAlbumScanner';
+import { useScannerContext } from '../../src/context/ScannerContext';
 import { TagRow } from '../../src/components/TagBadge';
 import { Colors, Radius, Shadow } from '../../src/theme';
 
-const { width: SW, height: SH } = Dimensions.get('window');
+const { width: SW } = Dimensions.get('window');
+
+// Smart album title keywords (iOS) that we surface as quick-select chips
+const QUICK_ALBUM_TITLES_HE: Record<string, string> = {
+  screenshots: 'סיכומי מסך',
+  favorites: 'מועדפים',
+};
+const QUICK_ALBUM_TITLES_EN: Record<string, string> = {
+  screenshots: 'Screenshots',
+  favorites: 'Favorites',
+};
 
 export default function AlbumScanScreen() {
-  const { t, lang, fontHe } = useLang();
+  const { t, lang, isRTL, fontHe } = useLang();
   const { addRecipe, recipes } = useRecipes();
-  const { status, progress, total, candidates, scanAlbum, cancel, reset } = useAlbumScanner();
+  const { status, progress, total, candidates, scanAlbum, cancel, reset } = useScannerContext();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [albums, setAlbums] = useState<MediaLibrary.Album[]>([]);
   const [selectedAlbumId, setSelectedAlbumId] = useState<string | undefined>();
+  const [scanLimitInput, setScanLimitInput] = useState('200');
+  const [albumModalVisible, setAlbumModalVisible] = useState(false);
   const [carouselIndex, setCarouselIndex] = useState(0);
+
+  const parsedLimit: number = (() => {
+    const v = scanLimitInput.trim().toLowerCase();
+    if (v === 'all' || v === 'הכל' || v === '') return 99999;
+    const n = parseInt(v);
+    return isNaN(n) || n <= 0 ? 200 : n;
+  })();
+
+  const timeHint = parsedLimit >= 9999
+    ? (lang === 'he' ? 'עלול לקחת זמן רב — תלוי בכמות התמונות' : 'May take a while — depends on your library size')
+    : (lang === 'he'
+        ? `⏱ עשוי לקחת עד ${Math.ceil(parsedLimit / 10)} דק׳`
+        : `⏱ May take up to ${Math.ceil(parsedLimit / 10)} min`);
 
   // Load albums once (requires permission already granted, or after grant)
   useEffect(() => {
@@ -36,11 +62,20 @@ export default function AlbumScanScreen() {
   const loadAlbums = async () => {
     try {
       const list = await MediaLibrary.getAlbumsAsync({ includeSmartAlbums: true });
-      // Filter to albums that actually have photos
-      const withPhotos = list.filter(a => a.assetCount > 0);
-      setAlbums(withPhotos);
+      setAlbums(list.filter(a => a.assetCount > 0));
     } catch {}
   };
+
+  // Find a specific named smart album (case-insensitive)
+  const findAlbum = (keyword: string) =>
+    albums.find(a => a.title.toLowerCase().includes(keyword));
+
+  const screenshotsAlbum = findAlbum('screenshot');
+  const favoritesAlbum   = findAlbum('favorite') ?? findAlbum('מועדפ');
+
+  const selectedAlbumTitle = selectedAlbumId
+    ? (albums.find(a => a.id === selectedAlbumId)?.title ?? '—')
+    : (lang === 'he' ? 'כל התמונות' : 'All Photos');
 
   const onViewRef = useRef(({ viewableItems }: any) => {
     if (viewableItems.length > 0) setCarouselIndex(viewableItems[0].index ?? 0);
@@ -63,7 +98,7 @@ export default function AlbumScanScreen() {
     const knownUris = new Set(
       recipes.flatMap(r => [r.sourceUri, r.sourceUrl]).filter(Boolean) as string[]
     );
-    scanAlbum(selectedAlbumId, knownUris);
+    scanAlbum({ albumId: selectedAlbumId, knownUris, limit: parsedLimit });
   };
 
   const handleAddSelected = async () => {
@@ -87,7 +122,7 @@ export default function AlbumScanScreen() {
         category: ex.category ?? 'other',
         emoji: ex.emoji ?? '🍽',
         sourceType: 'screenshot',
-        sourceUri: c.asset.uri,
+        sourceUri: c.resolvedUri,
         createdAt: c.asset.creationTime ?? Date.now(),
       };
       await addRecipe(recipe);
@@ -109,49 +144,120 @@ export default function AlbumScanScreen() {
             <Text style={styles.backText}>✕</Text>
           </TouchableOpacity>
           <Text style={[styles.topTitle, { fontFamily: fontHe }]}>{t('scanAlbum')}</Text>
-          <View style={{ width: 34 }} />
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.push('/scan/info')}>
+            <MaterialCommunityIcons name="information-outline" size={20} color="#fff" />
+          </TouchableOpacity>
         </View>
 
-        <ScrollView contentContainerStyle={styles.idleScroll} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={styles.idleScroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           {/* Scanner icon */}
           <View style={styles.scanIconWrap}>
-            <MaterialCommunityIcons name="barcode-scan" size={72} color={Colors.mauve} />
+            <MaterialCommunityIcons name="magnify-scan" size={72} color={Colors.mauve} />
           </View>
           <Text style={[styles.idleTitle, { fontFamily: fontHe }]}>{t('scanAlbum')}</Text>
           <Text style={[styles.idleSub, { fontFamily: fontHe }]}>{t('scanAlbumDesc')}</Text>
+          <Text style={[styles.idleNote, { fontFamily: fontHe, marginBottom: 24 }]}>
+            {lang === 'he'
+              ? 'השאר את המסך הזה פתוח. אפשר לצמצם את האפליקציה ולחזור — התוצאות יחכו לך.'
+              : 'Keep this screen open. You can minimize the app and return — the results will be waiting.'}
+          </Text>
 
-          {/* Album picker */}
-          {albums.length > 0 && (
-            <View style={styles.albumSection}>
-              <Text style={[styles.albumLabel, { fontFamily: fontHe }]}>
-                {lang === 'he' ? 'סרוק אלבום ספציפי (אופציונלי)' : 'Scan specific album (optional)'}
-              </Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.albumChips}>
+          {/* Scan count input */}
+          <View style={styles.albumSection}>
+            <Text style={[styles.albumLabel, { fontFamily: fontHe }]}>
+              {lang === 'he' ? 'כמה תמונות לסרוק?' : 'How many photos to scan?'}
+            </Text>
+            <View style={styles.limitInputRow}>
+              <TextInput
+                style={[styles.limitInput, { fontFamily: fontHe }]}
+                value={scanLimitInput}
+                onChangeText={setScanLimitInput}
+                placeholder={lang === 'he' ? 'מספר' : 'number'}
+                placeholderTextColor={Colors.text3}
+                keyboardType="number-pad"
+                returnKeyType="done"
+              />
+            </View>
+            <Text style={[styles.scanTimeHint, { fontFamily: fontHe }]}>{timeHint}</Text>
+          </View>
+
+          {/* Album quick-select + picker */}
+          <View style={styles.albumSection}>
+            <Text style={[styles.albumLabel, { fontFamily: fontHe }]}>
+              {lang === 'he' ? 'אלבום לסריקה' : 'Album to scan'}
+            </Text>
+            <View style={[styles.albumChips, { flexWrap: 'wrap' }]}>
+              {/* All Photos */}
+              <TouchableOpacity
+                style={[styles.albumChip, !selectedAlbumId && styles.albumChipActive]}
+                onPress={() => setSelectedAlbumId(undefined)}
+              >
+                <MaterialCommunityIcons
+                  name="image-multiple-outline"
+                  size={15}
+                  color={!selectedAlbumId ? '#fff' : Colors.text2}
+                />
+                <Text style={[styles.albumChipText, !selectedAlbumId && styles.albumChipTextActive, { fontFamily: fontHe }]}>
+                  {lang === 'he' ? 'כל התמונות' : 'All Photos'}
+                </Text>
+              </TouchableOpacity>
+
+              {/* Screenshots */}
+              {screenshotsAlbum && (
                 <TouchableOpacity
-                  style={[styles.albumChip, !selectedAlbumId && styles.albumChipActive]}
-                  onPress={() => setSelectedAlbumId(undefined)}
+                  style={[styles.albumChip, selectedAlbumId === screenshotsAlbum.id && styles.albumChipActive]}
+                  onPress={() => setSelectedAlbumId(screenshotsAlbum.id)}
                 >
-                  <Text style={[styles.albumChipText, !selectedAlbumId && styles.albumChipTextActive, { fontFamily: fontHe }]}>
-                    {lang === 'he' ? 'כל התמונות' : 'All Photos'}
+                  <MaterialCommunityIcons
+                    name="cellphone-screenshot"
+                    size={15}
+                    color={selectedAlbumId === screenshotsAlbum.id ? '#fff' : Colors.text2}
+                  />
+                  <Text style={[styles.albumChipText, selectedAlbumId === screenshotsAlbum.id && styles.albumChipTextActive, { fontFamily: fontHe }]}>
+                    {lang === 'he' ? QUICK_ALBUM_TITLES_HE.screenshots : QUICK_ALBUM_TITLES_EN.screenshots}
                   </Text>
                 </TouchableOpacity>
-                {albums.map(a => (
-                  <TouchableOpacity
-                    key={a.id}
-                    style={[styles.albumChip, selectedAlbumId === a.id && styles.albumChipActive]}
-                    onPress={() => setSelectedAlbumId(a.id)}
-                  >
-                    <Text style={[styles.albumChipText, selectedAlbumId === a.id && styles.albumChipTextActive, { fontFamily: fontHe }]} numberOfLines={1}>
-                      {a.title}
-                    </Text>
-                    <Text style={[styles.albumChipCount, selectedAlbumId === a.id && { color: 'rgba(255,255,255,0.7)' }]}>
-                      {a.assetCount}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+              )}
+
+              {/* Favorites */}
+              {favoritesAlbum && (
+                <TouchableOpacity
+                  style={[styles.albumChip, selectedAlbumId === favoritesAlbum.id && styles.albumChipActive]}
+                  onPress={() => setSelectedAlbumId(favoritesAlbum.id)}
+                >
+                  <MaterialCommunityIcons
+                    name="heart-outline"
+                    size={15}
+                    color={selectedAlbumId === favoritesAlbum.id ? '#fff' : Colors.text2}
+                  />
+                  <Text style={[styles.albumChipText, selectedAlbumId === favoritesAlbum.id && styles.albumChipTextActive, { fontFamily: fontHe }]}>
+                    {lang === 'he' ? QUICK_ALBUM_TITLES_HE.favorites : QUICK_ALBUM_TITLES_EN.favorites}
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              {/* Choose another album */}
+              {albums.length > 0 && (
+                <TouchableOpacity
+                  style={[
+                    styles.albumChip,
+                    selectedAlbumId && !screenshotsAlbum?.id.includes(selectedAlbumId) && !favoritesAlbum?.id.includes(selectedAlbumId) &&
+                      selectedAlbumId !== screenshotsAlbum?.id && selectedAlbumId !== favoritesAlbum?.id
+                      && styles.albumChipActive,
+                  ]}
+                  onPress={() => setAlbumModalVisible(true)}
+                >
+                  <MaterialCommunityIcons name="folder-open-outline" size={15} color={Colors.text2} />
+                  <Text style={[styles.albumChipText, { fontFamily: fontHe }]}>
+                    {selectedAlbumId && selectedAlbumId !== screenshotsAlbum?.id && selectedAlbumId !== favoritesAlbum?.id
+                      ? selectedAlbumTitle
+                      : (lang === 'he' ? 'בחר אלבום...' : 'Choose album...')}
+                  </Text>
+                  <MaterialCommunityIcons name="chevron-down" size={14} color={Colors.text2} />
+                </TouchableOpacity>
+              )}
             </View>
-          )}
+          </View>
 
           <TouchableOpacity style={styles.primaryBtn} onPress={handleStartScan}>
             <MaterialCommunityIcons name="magnify-scan" size={20} color="#fff" style={{ marginRight: 8 }} />
@@ -160,10 +266,54 @@ export default function AlbumScanScreen() {
 
           <Text style={[styles.idleNote, { fontFamily: fontHe }]}>
             {lang === 'he'
-              ? '2Spoons יסרוק עד 200 תמונות. כל מתכון שיזוהה יוצג לאישורך לפני שמירה.'
-              : '2Spoons will scan up to 200 photos. Every detected recipe will be shown for your approval before saving.'}
+              ? 'כל מתכון שיזוהה יוצג לאישורך לפני שמירה.'
+              : 'Every detected recipe will be shown for your approval before saving.'}
           </Text>
         </ScrollView>
+
+        {/* Album picker modal */}
+        <Modal
+          visible={albumModalVisible}
+          animationType="slide"
+          presentationStyle="pageSheet"
+          onRequestClose={() => setAlbumModalVisible(false)}
+        >
+          <SafeAreaView style={styles.modalSafe} edges={['top']}>
+            <View style={styles.modalTopBar}>
+              <Text style={[styles.modalTitle, { fontFamily: fontHe }]}>
+                {lang === 'he' ? 'בחר אלבום' : 'Choose Album'}
+              </Text>
+              <TouchableOpacity onPress={() => setAlbumModalVisible(false)} style={styles.modalClose}>
+                <MaterialCommunityIcons name="close" size={22} color={Colors.text} />
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={albums}
+              keyExtractor={a => a.id}
+              contentContainerStyle={{ paddingBottom: 32 }}
+              renderItem={({ item: a }) => {
+                const isActive = selectedAlbumId === a.id;
+                return (
+                  <TouchableOpacity
+                    style={[styles.albumListRow, isActive && styles.albumListRowActive]}
+                    onPress={() => { setSelectedAlbumId(a.id); setAlbumModalVisible(false); }}
+                  >
+                    <MaterialCommunityIcons
+                      name="folder-image"
+                      size={22}
+                      color={isActive ? Colors.mauve : Colors.text2}
+                    />
+                    <Text style={[styles.albumListName, { fontFamily: fontHe, color: isActive ? Colors.mauve : Colors.text }]} numberOfLines={1}>
+                      {a.title}
+                    </Text>
+                    <Text style={styles.albumListCount}>{a.assetCount}</Text>
+                    {isActive && <MaterialCommunityIcons name="check" size={18} color={Colors.mauve} />}
+                  </TouchableOpacity>
+                );
+              }}
+            />
+          </SafeAreaView>
+        </Modal>
       </SafeAreaView>
     );
   }
@@ -177,11 +327,8 @@ export default function AlbumScanScreen() {
           <Text style={[styles.topTitle, { fontFamily: fontHe }]}>{t('scanning')}</Text>
         </View>
         <View style={styles.center}>
-          <MaterialCommunityIcons name="barcode-scan" size={64} color={Colors.mauve} style={{ marginBottom: 16 }} />
+          <MaterialCommunityIcons name="magnify-scan" size={64} color={Colors.mauve} style={{ marginBottom: 16 }} />
           <Text style={[styles.idleTitle, { fontFamily: fontHe }]}>{t('scanningAlbum')}</Text>
-          <Text style={[styles.idleSub, { fontFamily: fontHe }]}>
-            {progress} / {total} {lang === 'he' ? 'תמונות' : 'photos'}
-          </Text>
           <View style={styles.progressTrack}>
             <View style={[styles.progressFill, { width: `${pct}%` as any }]} />
           </View>
@@ -243,6 +390,7 @@ export default function AlbumScanScreen() {
 
         {/* Carousel */}
         <FlatList
+          style={styles.carousel}
           data={candidates}
           keyExtractor={c => c.asset.id}
           horizontal
@@ -259,7 +407,19 @@ export default function AlbumScanScreen() {
 
             return (
               <View style={styles.slide}>
-                <Image source={{ uri: c.asset.uri }} style={styles.slideImage} resizeMode="cover" />
+                <Image
+                  source={{ uri: c.resolvedUri }}
+                  style={StyleSheet.absoluteFill}
+                  resizeMode="cover"
+                />
+                {c.isSeries && (
+                  <View style={styles.seriesBadge}>
+                    <MaterialCommunityIcons name="image-multiple" size={13} color="#fff" />
+                    <Text style={styles.seriesBadgeText}>
+                      {c.assets!.length} {lang === 'he' ? 'תמונות' : 'photos'}
+                    </Text>
+                  </View>
+                )}
 
                 {/* Bottom info overlay */}
                 <View style={styles.slideOverlay}>
@@ -363,11 +523,21 @@ const styles = StyleSheet.create({
   bigEmoji: { fontSize: 64, marginBottom: 16 },
   idleTitle: { fontSize: 22, fontWeight: '800', color: Colors.text, marginBottom: 10, textAlign: 'center' },
   idleSub: { fontSize: 15, color: Colors.text2, textAlign: 'center', marginBottom: 24, lineHeight: 22 },
-  idleNote: { fontSize: 12, color: Colors.text3, textAlign: 'center', marginTop: 16, lineHeight: 18 },
+  idleNote: { fontSize: 12, color: Colors.text3, textAlign: 'center', lineHeight: 18 },
 
   albumSection: { width: '100%', marginBottom: 24 },
   albumLabel: { fontSize: 13, color: Colors.text2, marginBottom: 10, textAlign: 'center' },
-  albumChips: { gap: 8, paddingHorizontal: 4 },
+  scanTimeHint: { fontSize: 12, color: Colors.mauve, textAlign: 'center', marginTop: 8, opacity: 0.85 },
+
+  limitInputRow: { justifyContent: 'center' },
+  limitInput: {
+    borderWidth: 1.5, borderColor: Colors.border, borderRadius: Radius.pill,
+    paddingHorizontal: 20, paddingVertical: 10, fontSize: 16,
+    backgroundColor: Colors.card, color: Colors.text, textAlign: 'center', minWidth: 160,
+    alignSelf: 'center',
+  },
+
+  albumChips: { flexDirection: 'row', gap: 8, paddingHorizontal: 4, justifyContent: 'center' },
   albumChip: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     borderWidth: 1.5, borderColor: Colors.border, borderRadius: Radius.pill,
@@ -376,11 +546,11 @@ const styles = StyleSheet.create({
   albumChipActive: { backgroundColor: Colors.mauve, borderColor: Colors.mauve },
   albumChipText: { fontSize: 13, fontWeight: '600', color: Colors.text },
   albumChipTextActive: { color: '#fff' },
-  albumChipCount: { fontSize: 11, color: Colors.text3 },
 
   primaryBtn: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: Colors.sun, borderRadius: Radius.pill, paddingHorizontal: 32, paddingVertical: 14,
+    marginBottom: 16,
   },
   primaryBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 
@@ -393,14 +563,22 @@ const styles = StyleSheet.create({
   cancelBtnText: { color: Colors.mauve, fontSize: 14, fontWeight: '600' },
 
   // Carousel
+  carousel: { flex: 1 },
   slide: { width: SW, flex: 1 },
-  slideImage: { width: SW, flex: 1 },
   slideOverlay: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     backgroundColor: 'rgba(0,0,0,0.55)', paddingHorizontal: 20, paddingVertical: 16, gap: 6,
   },
   slideTitle: { fontSize: 18, fontWeight: '800', color: '#fff', lineHeight: 24 },
   slideIngredients: { fontSize: 12, color: 'rgba(255,255,255,0.7)', marginTop: 2 },
+  seriesBadge: {
+    position: 'absolute', top: 16, left: 16,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(54,49,45,0.7)', borderRadius: 12,
+    paddingHorizontal: 10, paddingVertical: 5,
+  },
+  seriesBadgeText: { color: '#fff', fontSize: 12, fontWeight: '600' },
+
   slideCheck: {
     position: 'absolute', top: 16, right: 16,
     width: 56, height: 56, borderRadius: 28,
@@ -423,4 +601,22 @@ const styles = StyleSheet.create({
   actionCount: { fontSize: 16, fontWeight: '700', color: Colors.text },
   addBtn: { backgroundColor: Colors.sun, borderRadius: Radius.pill, paddingHorizontal: 24, paddingVertical: 12 },
   addBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+
+  // Album picker modal
+  modalSafe: { flex: 1, backgroundColor: Colors.cream },
+  modalTopBar: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 20, paddingVertical: 16,
+    borderBottomWidth: 1, borderBottomColor: Colors.border,
+  },
+  modalTitle: { fontSize: 18, fontWeight: '700', color: Colors.text },
+  modalClose: { padding: 4 },
+  albumListRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingHorizontal: 20, paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.border,
+  },
+  albumListRowActive: { backgroundColor: 'rgba(155,74,106,0.06)' },
+  albumListName: { flex: 1, fontSize: 15 },
+  albumListCount: { fontSize: 13, color: Colors.text3 },
 });

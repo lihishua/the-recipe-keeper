@@ -1,7 +1,8 @@
 // src/components/RecipeCard.tsx
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as VideoThumbnails from 'expo-video-thumbnails';
 import { Recipe } from '../context/RecipeContext';
 import { useLang } from '../context/LanguageContext';
 import { Colors, Fonts, Radius, Shadow } from '../theme';
@@ -12,12 +13,26 @@ interface Props {
   horizontal?: boolean;
 }
 
+const isVideoUri = (uri: string) => /\.(mp4|mov|m4v|3gp|avi|mkv)(\?|#|$)/i.test(uri);
+
 function CardImage({ uri, size }: { uri?: string; size: 'grid' | 'list' }) {
   const boxStyle = size === 'grid' ? styles.imageBox : styles.hImageBox;
-  if (uri) {
+  const [thumbUri, setThumbUri] = useState<string | undefined>(
+    uri && !isVideoUri(uri) ? uri : undefined
+  );
+
+  useEffect(() => {
+    if (uri && isVideoUri(uri)) {
+      VideoThumbnails.getThumbnailAsync(uri, { time: 0 })
+        .then(({ uri: t }) => setThumbUri(t))
+        .catch(() => {});
+    }
+  }, [uri]);
+
+  if (thumbUri) {
     return (
       <View style={boxStyle}>
-        <Image source={{ uri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+        <Image source={{ uri: thumbUri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
       </View>
     );
   }

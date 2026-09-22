@@ -146,7 +146,7 @@ export default function RecipeDetailScreen() {
             )}
             {recipe.tags.glutenFree && (
               <View style={styles.tagChip}>
-                <MaterialCommunityIcons name="barley-off" size={13} color={BG_DARK} />
+                <MaterialCommunityIcons name="wheat-off" size={13} color={BG_DARK} />
                 <Text style={styles.tagChipText}>{t('glutenFree')}</Text>
               </View>
             )}
@@ -166,7 +166,10 @@ export default function RecipeDetailScreen() {
               <TouchableOpacity style={styles.nutritionChip} onPress={() => setNutritionModalVisible(true)}>
                 <MaterialCommunityIcons name="fire" size={13} color="#fff" />
                 <Text style={styles.nutritionChipText}>
-                  {recipe.nutrition.calories} {lang === 'he' ? 'קלוריות/100ג' : 'cal/100g'}
+                  {recipe.nutrition.calories} {lang === 'he' ? 'קל/100ג' : 'cal/100g'}
+                  {recipe.nutrition.caloriesPerServing
+                    ? ` · ${recipe.nutrition.caloriesPerServing} ${lang === 'he' ? 'קל/מנה' : 'cal/serving'}`
+                    : ''}
                 </Text>
               </TouchableOpacity>
             )}
@@ -206,6 +209,41 @@ export default function RecipeDetailScreen() {
                 <Text style={[styles.stepText, { flex: 1, textAlign: isRTL ? 'right' : 'left' }]}>{step}</Text>
               </View>
             ))}
+          </View>
+        )}
+
+        {/* ── NOTES ── */}
+        {recipe.notes && (
+          <View style={styles.section}>
+            <Text style={styles.sectionHeader}>{lang === 'he' ? 'הערות' : 'Notes'}</Text>
+            <View style={styles.sectionLine} />
+            <Text style={[styles.notesText, { textAlign: isRTL ? 'right' : 'left' }]}>{recipe.notes}</Text>
+          </View>
+        )}
+
+        {/* ── ATTRIBUTION ── */}
+        {recipe.attribution && (
+          <View style={styles.section}>
+            <Text style={styles.sectionHeader}>{lang === 'he' ? 'של מי המתכון?' : 'Whose recipe?'}</Text>
+            <View style={styles.sectionLine} />
+            <View style={[styles.metaRow, { flexDirection: rowDir }]}>
+              <MaterialCommunityIcons name="account-heart-outline" size={18} color={BG_DARK} />
+              <Text style={[styles.metaText, { textAlign: isRTL ? 'right' : 'left' }]}>{recipe.attribution}</Text>
+            </View>
+          </View>
+        )}
+
+        {/* ── YIELD ── */}
+        {recipe.yield && (
+          <View style={styles.section}>
+            <Text style={styles.sectionHeader}>{lang === 'he' ? 'כמה יוצא?' : 'Makes'}</Text>
+            <View style={styles.sectionLine} />
+            <View style={[styles.metaRow, { flexDirection: rowDir }]}>
+              <MaterialCommunityIcons name="counter" size={18} color={BG_DARK} />
+              <Text style={[styles.metaText, { textAlign: isRTL ? 'right' : 'left' }]}>
+                {recipe.yield} {lang === 'he' ? 'יחידות' : 'servings'}
+              </Text>
+            </View>
           </View>
         )}
 
@@ -427,6 +465,9 @@ function makeStyles(fontRecipe: string, fontApp: string) {
       borderWidth: 1, borderColor: 'rgba(24,114,125,0.2)',
     },
     linkText: { fontFamily: fontRecipe, fontSize: 14, color: INK },
+    notesText: { fontFamily: fontRecipe, fontSize: 15, color: INK, lineHeight: 22 },
+    metaRow: { alignItems: 'center', gap: 10 },
+    metaText: { fontFamily: fontRecipe, fontSize: 16, color: INK, flex: 1 },
 
     modalBg: {
       flex: 1, backgroundColor: 'rgba(0,0,0,0.95)',

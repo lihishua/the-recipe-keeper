@@ -1,20 +1,41 @@
-// src/hooks/useAlbumScanner.ts
-import { useState, useCallback, useRef } from 'react';
+// src/context/ScannerContext.tsx
+import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
 import * as MediaLibrary from 'expo-media-library';
 import { Alert, Linking } from 'react-native';
 import { isRecipeImage, extractRecipeFromImage, extractRecipeFromImages } from '../services/claudeService';
-import { Recipe } from '../context/RecipeContext';
+import { Recipe } from './RecipeContext';
 
 export interface ScanCandidate {
-  asset: MediaLibrary.Asset;        // primary (first) asset
-  assets?: MediaLibrary.Asset[];    // all assets if this is a series (length >= 2)
+  asset: MediaLibrary.Asset;
+  resolvedUri: string;       // file:// URI — safe to use as image source
+  assets?: MediaLibrary.Asset[];
   isSeries?: boolean;
   extracted: Partial<Recipe> | null;
   isRecipe: boolean;
 }
 
-export function useAlbumScanner() {
-  const [status, setStatus] = useState<'idle' | 'requesting' | 'scanning' | 'done' | 'error'>('idle');
+interface ScannerContextType {
+  status: 'idle' | 'requesting' | 'scanning' | 'done' | 'error';
+  progress: number;
+  total: number;
+  candidates: ScanCandidate[];
+  scanAlbum: (options: { albumId?: string; knownUris?: Set<string>; limit: number }) => Promise<void>;
+  cancel: () => void;
+  reset: () => void;
+}
+
+const ScannerContext = createContext<ScannerContextType>({
+  status: 'idle',
+  progress: 0,
+  total: 0,
+  candidates: [],
+  scanAlbum: async () => {},
+  cancel: () => {},
+  reset: () => {},
+});
+
+export function ScannerProvider({ children }: { children: React.ReactNode }) {
+  const [status, setStatus] = useState<ScannerContextType['status']>('idle');
   const [progress, setProgress] = useState(0);
   const [total, setTotal] = useState(0);
   const [candidates, setCandidates] = useState<ScanCandidate[]>([]);
@@ -38,7 +59,11 @@ export function useAlbumScanner() {
     return true;
   };
 
-  const scanAlbum = useCallback(async (albumId?: string, knownUris?: Set<string>) => {
+  const scanAlbum = useCallback(async ({
+    albumId,
+    knownUris,
+    limit,
+  }: { albumId?: string; knownUris?: Set<string>; limit: number }) => {
     cancelledRef.current = false;
     setStatus('requesting');
     const ok = await requestPermission();
@@ -51,14 +76,12 @@ export function useAlbumScanner() {
     try {
       const { assets } = await MediaLibrary.getAssetsAsync({
         mediaType: 'photo',
-        first: 200,
+        first: limit,
         sortBy: [[MediaLibrary.SortBy.creationTime, false]],
         ...(albumId ? { album: albumId } : {}),
       });
 
-      // Group consecutive assets that were taken close together AND share the same dimensions
-      // (screenshots from the same source always have identical width × height).
-      // Time window: 3 minutes. Dimension tolerance: 5px.
+      // Group consecutive assets taken within 3 minutes AND same dimensions
       const SERIES_GAP_MS = 3 * 60_000;
       const DIM_TOLERANCE = 5;
       const groups: MediaLibrary.Asset[][] = [];
@@ -85,45 +108,70 @@ export function useAlbumScanner() {
 
       setTotal(groups.length);
       const found: ScanCandidate[] = [];
+      // Track resolved URIs already added — avoids adding duplicate photos
+      // (same image saved multiple times shows up as separate assets)
+      const foundUris = new Set<string>();
 
       for (let i = 0; i < groups.length; i++) {
         if (cancelledRef.current) { setStatus('done'); return; }
         setProgress(i + 1);
 
         const group = groups[i];
-
-        // Resolve local URIs for all assets in the group
         const infos = await Promise.all(group.map(a => MediaLibrary.getAssetInfoAsync(a)));
-        const uris = infos.map(info => info.localUri ?? info.uri);
 
-        // Skip if every URI in the group is already a known recipe
-        const assetUris = group.map(a => a.uri);
-        const allKnown = knownUris && uris.every((uri, idx) => knownUris.has(uri) || knownUris.has(assetUris[idx]));
+        // Only keep assets with a local file:// URI. ph:// URIs are iCloud-only
+        // photos not downloaded to the device — React Native can't render them.
+        const localPairs = group
+          .map((asset, idx) => ({ asset, uri: infos[idx].localUri }))
+          .filter((p): p is { asset: MediaLibrary.Asset; uri: string } => !!p.uri);
+
+        if (localPairs.length === 0) continue;
+
+        const validAssets = localPairs.map(p => p.asset);
+        const uris = localPairs.map(p => p.uri);
+
+        const allKnown = knownUris && uris.every((uri, idx) =>
+          knownUris.has(uri) || knownUris.has(localPairs[idx].asset.uri)
+        );
         if (allKnown) continue;
 
-        if (group.length >= 2) {
-          // Series: check first image, then extract all together
-          const firstUri = uris[0];
-          const isRecipe = await isRecipeImage(firstUri);
+        // Skip if we already found these images in this scan session.
+        // Use URI + asset fingerprint (filename+creationTime) for robust dedup
+        // since the same photo saved multiple times may have different localUris.
+        const fingerprints = localPairs.map(p => `${p.asset.filename}|${p.asset.creationTime}`);
+        if (uris.every(u => foundUris.has(u)) || fingerprints.every(f => foundUris.has(f))) continue;
+
+        if (validAssets.length >= 2) {
+          const isRecipe = await isRecipeImage(uris[0]);
           if (cancelledRef.current) { setStatus('done'); return; }
           if (isRecipe) {
             const result = await extractRecipeFromImages(uris);
             if (result) {
-              const coverAsset = group[result.coverImageIndex] ?? group[0];
-              found.push({ asset: coverAsset, assets: group, isSeries: true, extracted: result.recipe, isRecipe: true });
+              const coverIdx = Math.min(result.coverImageIndex, validAssets.length - 1);
+              uris.forEach(u => foundUris.add(u));
+              fingerprints.forEach(f => foundUris.add(f));
+              found.push({
+                asset: validAssets[coverIdx],
+                resolvedUri: uris[coverIdx],
+                assets: validAssets,
+                isSeries: true,
+                extracted: result.recipe,
+                isRecipe: true,
+              });
               setCandidates([...found]);
             }
           }
         } else {
-          // Single photo
-          const asset = group[0];
+          const asset = validAssets[0];
           const uri = uris[0];
           if (knownUris?.has(asset.uri) || knownUris?.has(uri)) continue;
           const isRecipe = await isRecipeImage(uri);
           if (cancelledRef.current) { setStatus('done'); return; }
           if (isRecipe) {
             const extracted = await extractRecipeFromImage(uri);
-            found.push({ asset, extracted, isRecipe: true });
+            foundUris.add(uri);
+            foundUris.add(fingerprints[0]);
+            found.push({ asset, resolvedUri: uri, extracted, isRecipe: true });
             setCandidates([...found]);
           }
         }
@@ -141,7 +189,6 @@ export function useAlbumScanner() {
 
   const cancel = () => {
     cancelledRef.current = true;
-    // Keep whatever was found — go to done so the user sees the results
     setStatus('done');
   };
 
@@ -152,5 +199,13 @@ export function useAlbumScanner() {
     setTotal(0);
   };
 
-  return { status, progress, total, candidates, scanAlbum, cancel, reset } as const;
+  return (
+    <ScannerContext.Provider value={{ status, progress, total, candidates, scanAlbum, cancel, reset }}>
+      {children}
+    </ScannerContext.Provider>
+  );
+}
+
+export function useScannerContext() {
+  return useContext(ScannerContext);
 }

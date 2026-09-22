@@ -2,23 +2,38 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
-  TextInput, Modal, Animated, Alert, Image,
+  TextInput, Modal, Animated, Alert, Image, ActivityIndicator,
   ScrollView, Keyboard, Dimensions, ImageBackground,
+  KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import * as VideoThumbnails from 'expo-video-thumbnails';
 import { useLang } from '../../src/context/LanguageContext';
-import { useRecipes, Recipe, Category, computeTotalTime } from '../../src/context/RecipeContext';
+import { useRecipes, Recipe, Category, computeTotalTime, Collection } from '../../src/context/RecipeContext';
 import { extractRecipeFromImage, extractRecipeFromImages, extractRecipeFromUrl } from '../../src/services/claudeService';
 import { draftStore } from '../../src/services/draftStore';
+import { useScannerContext } from '../../src/context/ScannerContext';
 import { Colors, Radius, Shadow } from '../../src/theme';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 type SortOrder = 'newest' | 'oldest' | 'alpha-asc' | 'alpha-desc' | 'time-asc' | 'time-desc';
 type UnifiedTag = Category | 'vegan' | 'vegetarian' | 'glutenFree' | 'dairyFree';
 type ActivePanel = 'search' | 'filter' | 'sort' | null;
+type ViewMode = 'spread' | 'folders';
+type OpenFolder = { kind: 'category'; key: Category } | { kind: 'custom'; col: Collection };
+
+// ── Category folder metadata ──────────────────────────────────────────────────
+const CATEGORY_META: Record<Category, { icon: React.ComponentProps<typeof MaterialCommunityIcons>['name']; labelHe: string; labelEn: string }> = {
+  italian:   { icon: 'noodles',               labelHe: 'איטלקי',      labelEn: 'Italian'   },
+  desserts:  { icon: 'cake-variant-outline',  labelHe: 'קינוחים',     labelEn: 'Desserts'  },
+  salads:    { icon: 'leaf',                  labelHe: 'סלטים',       labelEn: 'Salads'    },
+  breakfast: { icon: 'egg-outline',           labelHe: 'ארוחת בוקר', labelEn: 'Breakfast' },
+  asian:     { icon: 'bowl-mix-outline',      labelHe: 'אסייתי',      labelEn: 'Asian'     },
+  other:     { icon: 'silverware-fork-knife', labelHe: 'אחר',         labelEn: 'Other'     },
+};
 
 // Category line-art icons (monochrome, same style for all cards)
 const CATEGORY_ICON: Record<string, React.ComponentProps<typeof MaterialCommunityIcons>['name']> = {
@@ -38,7 +53,7 @@ const TAG_META: { key: UnifiedTag; icon: React.ComponentProps<typeof MaterialCom
   { key: 'asian',      icon: 'bowl-mix-outline' },
   { key: 'vegan',      icon: 'sprout' },
   { key: 'vegetarian', icon: 'food-apple-outline' },
-  { key: 'glutenFree', icon: 'barley' },
+  { key: 'glutenFree', icon: 'wheat-off' },
   { key: 'dairyFree',  icon: 'water-off' },
 ];
 
@@ -53,16 +68,24 @@ function getRecipeTags(r: Recipe): UnifiedTag[] {
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function HomeScreen() {
-  const { t, lang, setLang, isRTL, fontHe, fontApp, fontHeader, fontRecipe } = useLang();
-  const { recipes } = useRecipes();
+  const { t, lang, setLang, isRTL, fontHe, fontRecipe } = useLang();
+  const { recipes, deleteRecipe, collections, addCollection, updateCollection, deleteCollection } = useRecipes();
+  const { status: scanStatus, progress: scanProgress, total: scanTotal } = useScannerContext();
 
   // ── View state
   const [isGrid, setIsGrid]             = useState(true);
+  const [viewMode, setViewMode]         = useState<ViewMode>('spread');
   const [sortOrder, setSortOrder]       = useState<SortOrder>('newest');
   const [query, setQuery]               = useState('');
   const [selectedTags, setSelectedTags]           = useState<UnifiedTag[]>([]);
   const [selectedCustomTags, setSelectedCustomTags] = useState<string[]>([]);
   const [activePanel, setActivePanel]   = useState<ActivePanel>(null);
+
+  // ── Folder view state
+  const [openFolder, setOpenFolder]           = useState<OpenFolder | null>(null);
+  const [newFolderModal, setNewFolderModal]   = useState(false);
+  const [newFolderName, setNewFolderName]     = useState('');
+  const [pickingForFolder, setPickingForFolder] = useState<string | null>(null); // collection id
 
   // ── Add-recipe modal state
   const [addModalVisible, setAddModalVisible]     = useState(false);
@@ -273,6 +296,17 @@ export default function HomeScreen() {
   const toggleCustomTag = (tag: string) =>
     setSelectedCustomTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]);
 
+  const confirmDeleteRecipe = (recipe: Recipe) => {
+    Alert.alert(
+      lang === 'he' ? 'מחיקת מתכון' : 'Delete recipe',
+      lang === 'he' ? `למחוק את "${(recipe.titleHe ?? recipe.title)}"?` : `Delete "${(recipe.titleEn ?? recipe.title)}"?`,
+      [
+        { text: lang === 'he' ? 'ביטול' : 'Cancel', style: 'cancel' },
+        { text: lang === 'he' ? 'מחק' : 'Delete', style: 'destructive', onPress: () => deleteRecipe(recipe.id) },
+      ]
+    );
+  };
+
   // ── Photo logic ───────────────────────────────────────────────────────────
   const handlePickPhoto = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -387,7 +421,23 @@ export default function HomeScreen() {
       try {
         result = await extractRecipeFromUrl(url);
       } catch (apiErr: any) {
-        Alert.alert(lang === 'he' ? 'שגיאת API' : 'API Error', apiErr?.message ?? '');
+        const code = apiErr?.message ?? '';
+        const title = lang === 'he' ? 'לא ניתן לחלץ מתכון' : 'Could not extract recipe';
+        const msg =
+          code === 'API_CREDITS' ? (lang === 'he'
+            ? 'האפליקציה מגיעה לתקרת השימוש ב-AI. נסה שוב מאוחר יותר.'
+            : 'The app has reached its AI usage limit. Please try again later.')
+          : code === 'API_AUTH' ? (lang === 'he'
+            ? 'בעיית הגדרות פנימית. פנה למפתח האפליקציה.'
+            : 'Internal configuration issue. Contact the app developer.')
+          : code === 'API_RATE' ? (lang === 'he'
+            ? 'יותר מדי בקשות. המתן כמה שניות ונסה שוב.'
+            : 'Too many requests. Wait a moment and try again.')
+          : code === 'API_SERVER' ? (lang === 'he'
+            ? 'שרת ה-AI לא זמין כרגע. נסה שוב מאוחר יותר.'
+            : 'AI server is unavailable. Try again later.')
+          : (lang === 'he' ? 'משהו השתבש. נסה שוב.' : 'Something went wrong. Try again.');
+        Alert.alert(title, msg);
         return;
       }
       if (!result) {
@@ -416,12 +466,27 @@ export default function HomeScreen() {
   };
 
   // ── Render helpers ────────────────────────────────────────────────────────
+  const isVideoUri = (uri: string) => /\.(mp4|mov|m4v|3gp|avi|mkv)(\?|#|$)/i.test(uri);
+
   const RecipeThumb = ({ item, size }: { item: Recipe; size: number }) => {
     const icon = CATEGORY_ICON[item.category] ?? 'silverware-fork-knife';
-    if (item.sourceUri) {
+    const raw = item.sourceUri;
+    const [thumbUri, setThumbUri] = useState<string | null>(
+      raw && !isVideoUri(raw) ? raw : null
+    );
+
+    useEffect(() => {
+      if (raw && isVideoUri(raw)) {
+        VideoThumbnails.getThumbnailAsync(raw, { time: 0 })
+          .then(({ uri }) => setThumbUri(uri))
+          .catch(() => {});
+      }
+    }, [raw]);
+
+    if (thumbUri) {
       return (
         <Image
-          source={{ uri: item.sourceUri }}
+          source={{ uri: thumbUri }}
           style={{ width: '100%', height: size, borderRadius: Radius.md }}
           resizeMode="cover"
         />
@@ -437,8 +502,9 @@ export default function HomeScreen() {
   const GridItem = ({ item }: { item: Recipe }) => {
     const title = (lang === 'he' ? item.titleHe : item.titleEn) ?? item.title;
     const total = computeTotalTime(item.tags);
+
     return (
-      <TouchableOpacity style={styles.gridItem} onPress={() => router.push(`/recipe/${item.id}`)}>
+      <View style={styles.gridItem}>
         <RecipeThumb item={item} size={110} />
         <View style={[styles.gridTitleRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
           <Text style={[styles.gridTitle, { textAlign: isRTL ? 'right' : 'left', fontFamily: fontRecipe }]} numberOfLines={1}>
@@ -448,7 +514,14 @@ export default function HomeScreen() {
             <Text style={[styles.gridMeta, { fontFamily: fontRecipe }]}>{total}{t('min')}</Text>
           )}
         </View>
-      </TouchableOpacity>
+        <TouchableOpacity
+          style={StyleSheet.absoluteFill}
+          activeOpacity={0.82}
+          onPress={() => router.push(`/recipe/${item.id}`)}
+          onLongPress={() => confirmDeleteRecipe(item)}
+          delayLongPress={500}
+        />
+      </View>
     );
   };
 
@@ -490,6 +563,113 @@ export default function HomeScreen() {
     </View>
   );
 
+  // ── Folder helpers ────────────────────────────────────────────────────────
+  const categoryFolderItems = useMemo(() =>
+    (Object.keys(CATEGORY_META) as Category[]).filter(
+      cat => recipes.some(r => r.category === cat)
+    ),
+  [recipes]);
+
+  const confirmDeleteFolder = (col: Collection) => {
+    Alert.alert(
+      lang === 'he' ? 'מחיקת תיקייה' : 'Delete folder',
+      lang === 'he' ? `למחוק את "${col.name}"? המתכונים יישארו.` : `Delete "${col.name}"? Recipes will remain.`,
+      [
+        { text: lang === 'he' ? 'ביטול' : 'Cancel', style: 'cancel' },
+        { text: lang === 'he' ? 'מחק' : 'Delete', style: 'destructive', onPress: () => deleteCollection(col.id) },
+      ]
+    );
+  };
+
+  const FolderCard = ({ cat }: { cat: Category }) => {
+    const meta = CATEGORY_META[cat];
+    const count = recipes.filter(r => r.category === cat).length;
+    const thumbs = recipes.filter(r => r.category === cat && r.sourceUri).slice(0, 4);
+    return (
+      <TouchableOpacity style={styles.folderCard} activeOpacity={0.82}
+        onPress={() => setOpenFolder({ kind: 'category', key: cat })}>
+        <View style={styles.folderThumbGrid}>
+          {[0, 1, 2, 3].map(i =>
+            thumbs[i]?.sourceUri
+              ? <Image key={i} source={{ uri: thumbs[i].sourceUri! }} style={styles.folderThumb} resizeMode="cover" />
+              : <View key={i} style={[styles.folderThumb, styles.folderThumbEmpty]}>
+                  <MaterialCommunityIcons name={meta.icon} size={20} color={Colors.mauve} />
+                </View>
+          )}
+        </View>
+        <Text style={[styles.folderName, { textAlign: isRTL ? 'right' : 'left', fontFamily: fontHe }]} numberOfLines={1}>
+          {lang === 'he' ? meta.labelHe : meta.labelEn}
+        </Text>
+        <Text style={[styles.folderCount, { fontFamily: fontHe }]}>
+          {count} {lang === 'he' ? 'מתכונים' : 'recipes'}
+        </Text>
+      </TouchableOpacity>
+    );
+  };
+
+  const CustomFolderCard = ({ col }: { col: Collection }) => {
+    const thumbs = col.recipeIds
+      .map(id => recipes.find(r => r.id === id))
+      .filter(Boolean)
+      .filter(r => r!.sourceUri)
+      .slice(0, 4) as Recipe[];
+    return (
+      <TouchableOpacity style={[styles.folderCard, styles.folderCardCustom]} activeOpacity={0.82}
+        onPress={() => setOpenFolder({ kind: 'custom', col })}
+        onLongPress={() => confirmDeleteFolder(col)}
+        delayLongPress={500}
+      >
+        <View style={styles.folderThumbGrid}>
+          {[0, 1, 2, 3].map(i =>
+            thumbs[i]?.sourceUri
+              ? <Image key={i} source={{ uri: thumbs[i].sourceUri! }} style={styles.folderThumb} resizeMode="cover" />
+              : <View key={i} style={[styles.folderThumb, styles.folderThumbEmpty]}>
+                  <MaterialCommunityIcons name="folder-outline" size={20} color="#fff" />
+                </View>
+          )}
+        </View>
+        <Text style={[styles.folderName, { textAlign: isRTL ? 'right' : 'left', fontFamily: fontHe, color: '#fff' }]} numberOfLines={1}>
+          {col.name}
+        </Text>
+        <Text style={[styles.folderCount, { fontFamily: fontHe, color: 'rgba(255,255,255,0.8)' }]}>
+          {col.recipeIds.length} {lang === 'he' ? 'מתכונים' : 'recipes'}
+        </Text>
+      </TouchableOpacity>
+    );
+  };
+
+  const FolderGridView = () => (
+    <ScrollView contentContainerStyle={styles.folderGrid} showsVerticalScrollIndicator={false}>
+      {/* Category folders */}
+      <View style={[styles.folderRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+        {categoryFolderItems.map(cat => <FolderCard key={cat} cat={cat} />)}
+      </View>
+
+      {/* Custom folders */}
+      {collections.length > 0 && (
+        <>
+          <Text style={[styles.folderSectionLabel, { fontFamily: fontHe, textAlign: isRTL ? 'right' : 'left' }]}>
+            {lang === 'he' ? 'תיקיות מותאמות אישית' : 'Custom folders'}
+          </Text>
+          <View style={[styles.folderRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+            {collections.map(col => <CustomFolderCard key={col.id} col={col} />)}
+          </View>
+        </>
+      )}
+
+      {/* Add folder button */}
+      <TouchableOpacity style={styles.addFolderBtn}
+        onPress={() => { setNewFolderName(''); setNewFolderModal(true); }}>
+        <MaterialCommunityIcons name="folder-plus-outline" size={22} color={Colors.mauve} />
+        <Text style={[styles.addFolderText, { fontFamily: fontHe }]}>
+          {lang === 'he' ? 'תיקייה חדשה' : 'New folder'}
+        </Text>
+      </TouchableOpacity>
+
+      <View style={{ height: 120 }} />
+    </ScrollView>
+  );
+
   // ─────────────────────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -507,38 +687,50 @@ export default function HomeScreen() {
       <View style={[styles.toolbar, { flexDirection: rowDir }]}>
         {/* Centered action buttons */}
         <View style={[styles.toolbarCenter, { flexDirection: rowDir }]}>
-          <TouchableOpacity
-            style={[styles.toolBtn, activePanel === 'search' && styles.toolBtnActive]}
-            onPress={() => togglePanel('search')}
-          >
-            <MaterialCommunityIcons name="magnify" size={20} color={activePanel === 'search' ? Colors.sun : '#fff'} />
-          </TouchableOpacity>
+          {viewMode === 'spread' && (<>
+            <TouchableOpacity
+              style={[styles.toolBtn, activePanel === 'search' && styles.toolBtnActive]}
+              onPress={() => togglePanel('search')}
+            >
+              <MaterialCommunityIcons name="magnify" size={20} color={activePanel === 'search' ? Colors.sun : '#fff'} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.toolBtn, (activePanel === 'filter' || hasActiveFilters) && styles.toolBtnActive]}
+              onPress={() => togglePanel('filter')}
+            >
+              <MaterialCommunityIcons
+                name="tag-multiple-outline" size={20}
+                color={(activePanel === 'filter' || hasActiveFilters) ? Colors.sun : '#fff'}
+              />
+              {hasActiveFilters && <View style={styles.filterDot} />}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.toolBtn, activePanel === 'sort' && styles.toolBtnActive]}
+              onPress={() => togglePanel('sort')}
+            >
+              <View style={{ width: 20, height: 20 }}>
+                <MaterialCommunityIcons name="arrow-up-thin" size={20} color={activePanel === 'sort' ? Colors.sun : '#fff'} style={{ position: 'absolute', left: -4, top: -2 }} />
+                <MaterialCommunityIcons name="arrow-down-thin" size={20} color={activePanel === 'sort' ? Colors.sun : '#fff'} style={{ position: 'absolute', right: -4, bottom: -2 }} />
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.toolBtn} onPress={() => setIsGrid(v => !v)}>
+              <MaterialCommunityIcons
+                name={isGrid ? 'view-list-outline' : 'view-grid-outline'}
+                size={20} color="#fff"
+              />
+            </TouchableOpacity>
+          </>)}
 
           <TouchableOpacity
-            style={[styles.toolBtn, (activePanel === 'filter' || hasActiveFilters) && styles.toolBtnActive]}
-            onPress={() => togglePanel('filter')}
+            style={[styles.toolBtn, viewMode === 'folders' && styles.toolBtnActive]}
+            onPress={() => { setViewMode(v => v === 'spread' ? 'folders' : 'spread'); setActivePanel(null); }}
           >
             <MaterialCommunityIcons
-              name="tag-multiple-outline" size={20}
-              color={(activePanel === 'filter' || hasActiveFilters) ? Colors.sun : '#fff'}
-            />
-            {hasActiveFilters && <View style={styles.filterDot} />}
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.toolBtn, activePanel === 'sort' && styles.toolBtnActive]}
-            onPress={() => togglePanel('sort')}
-          >
-            <View style={{ width: 20, height: 20 }}>
-              <MaterialCommunityIcons name="arrow-up-thin" size={20} color={activePanel === 'sort' ? Colors.sun : '#fff'} style={{ position: 'absolute', left: -4, top: -2 }} />
-              <MaterialCommunityIcons name="arrow-down-thin" size={20} color={activePanel === 'sort' ? Colors.sun : '#fff'} style={{ position: 'absolute', right: -4, bottom: -2 }} />
-            </View>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.toolBtn} onPress={() => setIsGrid(v => !v)}>
-            <MaterialCommunityIcons
-              name={isGrid ? 'view-list-outline' : 'view-grid-outline'}
-              size={20} color="#fff"
+              name="folder-multiple-outline"
+              size={20} color={viewMode === 'folders' ? Colors.sun : '#fff'}
             />
           </TouchableOpacity>
         </View>
@@ -646,11 +838,13 @@ export default function HomeScreen() {
         style={{ flex: 1 }}
         imageStyle={{ opacity: 0.07, resizeMode: 'repeat' }}
       >
-        {isGrid ? (
+        {viewMode === 'folders' ? (
+          <FolderGridView />
+        ) : isGrid ? (
           <FlatList
             key="grid"
             data={displayed}
-            keyExtractor={r => r.id}
+            keyExtractor={item => item.id}
             numColumns={2}
             contentContainerStyle={styles.gridContent}
             columnWrapperStyle={{ gap: 12, flexDirection: isRTL ? 'row-reverse' : 'row' }}
@@ -670,6 +864,20 @@ export default function HomeScreen() {
           />
         )}
       </ImageBackground>
+
+      {/* ── SCAN PROGRESS BADGE ── */}
+      {scanStatus === 'scanning' && (
+        <TouchableOpacity
+          style={styles.scanBadge}
+          onPress={() => router.push('/scan/album')}
+          activeOpacity={0.85}
+        >
+          <ActivityIndicator size="small" color="#fff" />
+          <Text style={[styles.scanBadgeText, { fontFamily: fontHe }]}>
+            {lang === 'he' ? 'סריקה בתהליך...' : 'Scanning...'}
+          </Text>
+        </TouchableOpacity>
+      )}
 
       {/* ── SPEED-DIAL BACKDROP ── */}
       {fabExpanded && (
@@ -751,36 +959,222 @@ export default function HomeScreen() {
         animationType="slide"
         onRequestClose={() => { setAddModalVisible(false); setLinkExpanded(false); }}
       >
-        <View style={styles.modalContainer}>
-          <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1}
-            onPress={() => { setAddModalVisible(false); setLinkExpanded(false); }} />
-          <View style={styles.addSheet}>
-            <View style={styles.sheetHandle} />
-            <View style={[styles.subOptions, { paddingVertical: 12 }]}>
-              <View style={[styles.linkInputRow, { flexDirection: rowDir }]}>
-                <TextInput
-                  style={[styles.linkInput, { flex: 1, textAlign: isRTL ? 'right' : 'left', fontFamily: fontHe }]}
-                  placeholder={t('linkPlaceholder')}
-                  placeholderTextColor={Colors.text3}
-                  value={linkInput}
-                  onChangeText={setLinkInput}
-                  autoCapitalize="none"
-                  keyboardType="url"
-                  returnKeyType="go"
-                  onSubmitEditing={handleExtractFromLink}
-                />
-                <TouchableOpacity
-                  style={[styles.linkGoBtn, !linkInput.trim() && { opacity: 0.4 }]}
-                  onPress={handleExtractFromLink}
-                  disabled={!linkInput.trim()}
-                >
-                  <MaterialCommunityIcons name="arrow-right" size={20} color="#fff" />
-                </TouchableOpacity>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <View style={styles.modalContainer}>
+            <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1}
+              onPress={() => { setAddModalVisible(false); setLinkExpanded(false); }} />
+            <View style={styles.addSheet}>
+              <View style={styles.sheetHandle} />
+              <View style={[styles.subOptions, { paddingVertical: 12 }]}>
+                <View style={[styles.linkInputRow, { flexDirection: rowDir }]}>
+                  <TextInput
+                    style={[styles.linkInput, { flex: 1, textAlign: isRTL ? 'right' : 'left' }]}
+                    placeholder={t('linkPlaceholder')}
+                    placeholderTextColor={Colors.text3}
+                    value={linkInput}
+                    onChangeText={setLinkInput}
+                    autoCapitalize="none"
+                    keyboardType="url"
+                    returnKeyType="go"
+                    onSubmitEditing={handleExtractFromLink}
+                    autoFocus
+                  />
+                  <TouchableOpacity
+                    style={[styles.linkGoBtn, !linkInput.trim() && { opacity: 0.4 }]}
+                    onPress={handleExtractFromLink}
+                    disabled={!linkInput.trim()}
+                  >
+                    <MaterialCommunityIcons name={isRTL ? 'arrow-left' : 'arrow-right'} size={20} color="#fff" />
+                  </TouchableOpacity>
+                </View>
               </View>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ── FOLDER DETAIL MODAL ── */}
+      {openFolder && (() => {
+        const isCategory = openFolder.kind === 'category';
+        const folderRecipes = isCategory
+          ? recipes.filter(r => r.category === openFolder.key)
+          : (openFolder.col.recipeIds.map(id => recipes.find(r => r.id === id)).filter(Boolean) as Recipe[]);
+        const meta = isCategory ? CATEGORY_META[openFolder.key] : null;
+        const title = isCategory
+          ? (lang === 'he' ? meta!.labelHe : meta!.labelEn)
+          : openFolder.col.name;
+        return (
+          <Modal visible animationType="slide" presentationStyle="pageSheet"
+            onRequestClose={() => setOpenFolder(null)}>
+            <SafeAreaView style={{ flex: 1, backgroundColor: Colors.cream }} edges={['top']}>
+              <View style={[styles.folderModalHeader, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+                <TouchableOpacity onPress={() => setOpenFolder(null)}>
+                  <MaterialCommunityIcons name="close" size={24} color="#fff" />
+                </TouchableOpacity>
+                <Text style={[styles.folderModalTitle, { fontFamily: fontHe }]}>{title}</Text>
+                {!isCategory ? (
+                  <TouchableOpacity onPress={() => setPickingForFolder(openFolder.col.id)}>
+                    <MaterialCommunityIcons name="plus" size={24} color="#fff" />
+                  </TouchableOpacity>
+                ) : <View style={{ width: 24 }} />}
+              </View>
+              <FlatList
+                data={folderRecipes}
+                keyExtractor={r => r.id}
+                numColumns={2}
+                contentContainerStyle={styles.gridContent}
+                columnWrapperStyle={{ gap: 12, flexDirection: isRTL ? 'row-reverse' : 'row' }}
+                ListEmptyComponent={
+                  <View style={styles.empty}>
+                    <MaterialCommunityIcons name="folder-open-outline" size={48} color={Colors.text3} />
+                    <Text style={[styles.emptyText, { fontFamily: fontHe }]}>
+                      {lang === 'he' ? 'התיקייה ריקה' : 'Folder is empty'}
+                    </Text>
+                    {!isCategory && (
+                      <TouchableOpacity onPress={() => setPickingForFolder(openFolder.col.id)}>
+                        <Text style={{ color: Colors.mauve, fontFamily: fontHe, marginTop: 8 }}>
+                          {lang === 'he' ? 'הוסף מתכונים' : 'Add recipes'}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                }
+                renderItem={({ item: r }) => (
+                  <View style={styles.gridItem}>
+                    <RecipeThumb item={r} size={110} />
+                    <View style={[styles.gridTitleRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+                      <Text style={[styles.gridTitle, { textAlign: isRTL ? 'right' : 'left', fontFamily: fontRecipe }]} numberOfLines={1}>
+                        {(lang === 'he' ? r.titleHe : r.titleEn) ?? r.title}
+                      </Text>
+                    </View>
+                    <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={0.82}
+                      onPress={() => { setOpenFolder(null); router.push(`/recipe/${r.id}`); }} />
+                    {!isCategory && (
+                      <TouchableOpacity
+                        style={styles.folderRemoveBtn}
+                        hitSlop={{ top: 8, left: 8, right: 8, bottom: 8 }}
+                        onPress={() => {
+                          const updated = { ...openFolder.col, recipeIds: openFolder.col.recipeIds.filter(id => id !== r.id) };
+                          updateCollection(updated);
+                          setOpenFolder({ kind: 'custom', col: updated });
+                        }}
+                      >
+                        <MaterialCommunityIcons name="close-circle" size={22} color="rgba(0,0,0,0.55)" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                )}
+              />
+            </SafeAreaView>
+          </Modal>
+        );
+      })()}
+
+      {/* ── NEW FOLDER MODAL ── */}
+      <Modal visible={newFolderModal} transparent animationType="fade"
+        onRequestClose={() => setNewFolderModal(false)}>
+        <View style={styles.nameModalBackdrop}>
+          <View style={styles.nameModalBox}>
+            <Text style={[styles.nameModalTitle, { fontFamily: fontHe }]}>
+              {lang === 'he' ? 'שם התיקייה' : 'Folder name'}
+            </Text>
+            <TextInput
+              style={[styles.nameModalInput, { fontFamily: fontHe, textAlign: isRTL ? 'right' : 'left' }]}
+              value={newFolderName}
+              onChangeText={setNewFolderName}
+              autoFocus
+              returnKeyType="done"
+              onSubmitEditing={() => {
+                if (newFolderName.trim()) {
+                  addCollection({ id: Date.now().toString(), name: newFolderName.trim(), recipeIds: [] });
+                }
+                setNewFolderModal(false);
+              }}
+            />
+            <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', gap: 10, justifyContent: 'flex-end' }}>
+              <TouchableOpacity onPress={() => setNewFolderModal(false)} style={styles.nameModalCancel}>
+                <Text style={{ fontFamily: fontHe, color: Colors.text2 }}>{lang === 'he' ? 'ביטול' : 'Cancel'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.nameModalOk, !newFolderName.trim() && { opacity: 0.4 }]}
+                disabled={!newFolderName.trim()}
+                onPress={() => {
+                  addCollection({ id: Date.now().toString(), name: newFolderName.trim(), recipeIds: [] });
+                  setNewFolderModal(false);
+                }}
+              >
+                <Text style={{ fontFamily: fontHe, color: '#fff', fontWeight: '700' }}>{lang === 'he' ? 'צור' : 'Create'}</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
+
+      {/* ── ADD RECIPES TO FOLDER MODAL ── */}
+      {pickingForFolder && (() => {
+        const col = collections.find(c => c.id === pickingForFolder);
+        if (!col) return null;
+        const notInFolder = recipes.filter(r => !col.recipeIds.includes(r.id));
+        return (
+          <Modal visible animationType="slide" presentationStyle="pageSheet"
+            onRequestClose={() => setPickingForFolder(null)}>
+            <SafeAreaView style={{ flex: 1, backgroundColor: Colors.cream }} edges={['top']}>
+              <View style={[styles.folderModalHeader, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+                <TouchableOpacity onPress={() => setPickingForFolder(null)}>
+                  <MaterialCommunityIcons name="close" size={24} color="#fff" />
+                </TouchableOpacity>
+                <Text style={[styles.folderModalTitle, { fontFamily: fontHe }]}>
+                  {lang === 'he' ? 'הוסף מתכונים' : 'Add recipes'}
+                </Text>
+                <View style={{ width: 24 }} />
+              </View>
+              {notInFolder.length === 0 ? (
+                <View style={styles.empty}>
+                  <Text style={[styles.emptyText, { fontFamily: fontHe }]}>
+                    {lang === 'he' ? 'כל המתכונים כבר בתיקייה' : 'All recipes already in folder'}
+                  </Text>
+                </View>
+              ) : (
+                <FlatList
+                  data={notInFolder}
+                  keyExtractor={r => r.id}
+                  contentContainerStyle={{ padding: 12, paddingBottom: 40, gap: 10 }}
+                  renderItem={({ item: r }) => {
+                    const title = (lang === 'he' ? r.titleHe : r.titleEn) ?? r.title;
+                    return (
+                      <TouchableOpacity
+                        style={[styles.listItem, { flexDirection: rowDir }]}
+                        onPress={() => {
+                          const updated = { ...col, recipeIds: [...col.recipeIds, r.id] };
+                          updateCollection(updated);
+                          // refresh openFolder if it's this collection
+                          if (openFolder?.kind === 'custom' && openFolder.col.id === col.id) {
+                            setOpenFolder({ kind: 'custom', col: updated });
+                          }
+                          setPickingForFolder(null);
+                          // re-open with updated col for multi-add — for simplicity close picker each time
+                        }}
+                      >
+                        <View style={styles.listThumbWrap}>
+                          <RecipeThumb item={r} size={52} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.listTitle, { textAlign: isRTL ? 'right' : 'left', fontFamily: fontRecipe }]}>{title}</Text>
+                          <Text style={[styles.listMeta, { fontFamily: fontHe }]}>{t(r.category as any)}</Text>
+                        </View>
+                        <MaterialCommunityIcons name="plus-circle-outline" size={24} color="rgba(255,255,255,0.8)" />
+                      </TouchableOpacity>
+                    );
+                  }}
+                />
+              )}
+            </SafeAreaView>
+          </Modal>
+        );
+      })()}
 
       {/* ── AI SCANNING OVERLAY ── */}
       {scanning && (
@@ -926,6 +1320,16 @@ const styles = StyleSheet.create({
     fontSize: 20, fontWeight: '900', color: '#fff', lineHeight: 22,
   },
 
+  // Scan progress badge
+  scanBadge: {
+    position: 'absolute', bottom: 110, left: 20,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: Colors.mauve, borderRadius: Radius.pill,
+    paddingHorizontal: 14, paddingVertical: 8,
+    ...Shadow.md,
+  },
+  scanBadgeText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+
   // Add modal sheet
   modalContainer: { flex: 1, justifyContent: 'flex-end' },
   addSheet: {
@@ -960,6 +1364,58 @@ const styles = StyleSheet.create({
   linkGoBtn: {
     width: 40, height: 40, borderRadius: 20,
     backgroundColor: Colors.mauve, alignItems: 'center', justifyContent: 'center',
+  },
+
+  // Folder view
+  folderGrid: { padding: 12, gap: 16, paddingBottom: 120 },
+  folderRow: { flexWrap: 'wrap', gap: 12 },
+  folderCard: {
+    width: (Dimensions.get('window').width - 12 * 2 - 12) / 2,
+    backgroundColor: Colors.cream, borderRadius: Radius.lg,
+    borderWidth: 1, borderColor: Colors.border,
+    overflow: 'hidden', ...Shadow.sm,
+  },
+  folderCardCustom: { backgroundColor: Colors.mauve, borderColor: Colors.mauve },
+  folderThumbGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  folderThumb: { width: '50%', height: 62 },
+  folderThumbEmpty: {
+    backgroundColor: 'rgba(0,0,0,0.06)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  folderName: { fontSize: 14, fontWeight: '700', color: Colors.text, paddingHorizontal: 10, paddingTop: 8 },
+  folderCount: { fontSize: 11, color: Colors.text3, paddingHorizontal: 10, paddingBottom: 10 },
+  folderSectionLabel: { fontSize: 13, fontWeight: '700', color: Colors.text3, paddingHorizontal: 4, marginTop: 4 },
+  addFolderBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: Colors.card, borderRadius: Radius.lg,
+    borderWidth: 1.5, borderColor: Colors.border, borderStyle: 'dashed',
+    paddingHorizontal: 18, paddingVertical: 14,
+    alignSelf: 'flex-start', marginTop: 4,
+  },
+  addFolderText: { fontSize: 14, color: Colors.mauve, fontWeight: '700' },
+  folderModalHeader: {
+    backgroundColor: Colors.mauve, alignItems: 'center',
+    justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14,
+  },
+  folderModalTitle: { fontSize: 17, fontWeight: '700', color: '#fff', flex: 1, textAlign: 'center' },
+  folderRemoveBtn: { position: 'absolute', top: -4, left: -4 },
+  nameModalBackdrop: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center', alignItems: 'center', padding: 32,
+  },
+  nameModalBox: {
+    backgroundColor: '#fff', borderRadius: Radius.xl,
+    padding: 24, width: '100%', gap: 16,
+  },
+  nameModalTitle: { fontSize: 18, fontWeight: '700', color: Colors.text },
+  nameModalInput: {
+    borderWidth: 1.5, borderColor: Colors.border, borderRadius: Radius.pill,
+    paddingHorizontal: 16, paddingVertical: 10, fontSize: 16, color: Colors.text,
+  },
+  nameModalCancel: { paddingHorizontal: 16, paddingVertical: 10 },
+  nameModalOk: {
+    backgroundColor: Colors.sun, borderRadius: Radius.pill,
+    paddingHorizontal: 20, paddingVertical: 10,
   },
 
   // AI scanning overlay

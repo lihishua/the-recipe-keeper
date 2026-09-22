@@ -7,6 +7,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useFonts } from 'expo-font';
 import { LanguageProvider, useLang } from '../src/context/LanguageContext';
 import { RecipeProvider } from '../src/context/RecipeContext';
+import { ScannerProvider } from '../src/context/ScannerContext';
 import { StatusBar } from 'expo-status-bar';
 
 // Set initial default font (Gan — Hebrew default) before first render
@@ -42,6 +43,7 @@ export default function RootLayout() {
         <LanguageProvider>
           <FontDefaultProvider>
             <RecipeProvider>
+              <ScannerProvider>
               <StatusBar style="light" backgroundColor="#9b4a6a" />
               <Stack screenOptions={{ headerShown: false }}>
                 <Stack.Screen name="(tabs)" />
@@ -51,8 +53,9 @@ export default function RootLayout() {
                 <Stack.Screen name="recipe/add" options={{ presentation: 'modal' }} />
                 <Stack.Screen name="recipe/edit/[id]" options={{ presentation: 'modal' }} />
                 <Stack.Screen name="scan/album" options={{ presentation: 'modal' }} />
-                <Stack.Screen name="scan/camera" options={{ presentation: 'modal' }} />
+                <Stack.Screen name="scan/info" options={{ presentation: 'modal' }} />
               </Stack>
+              </ScannerProvider>
             </RecipeProvider>
           </FontDefaultProvider>
         </LanguageProvider>

@@ -45,6 +45,8 @@ export interface Recipe {
   videoPlatform?: string;
   createdAt: number;     // timestamp
   notes?: string;
+  attribution?: string;  // whose recipe it is
+  yield?: number;        // how many servings/items this recipe makes
   customTags?: string[]; // free-text tags added by the user
   customTagsHe?: string[];
   customTagsEn?: string[];
@@ -55,7 +57,14 @@ export interface Recipe {
     carbs: number;
     fiber?: number;
     sugar?: number;
+    caloriesPerServing?: number;  // only set when yield is known
   };
+}
+
+export interface Collection {
+  id: string;
+  name: string;
+  recipeIds: string[];
 }
 
 interface RecipeContextType {
@@ -64,6 +73,10 @@ interface RecipeContextType {
   updateRecipe: (r: Recipe) => Promise<void>;
   deleteRecipe: (id: string) => Promise<void>;
   getRecipeById: (id: string) => Recipe | undefined;
+  collections: Collection[];
+  addCollection: (c: Collection) => Promise<void>;
+  updateCollection: (c: Collection) => Promise<void>;
+  deleteCollection: (id: string) => Promise<void>;
 }
 
 const RecipeContext = createContext<RecipeContextType>({
@@ -72,9 +85,14 @@ const RecipeContext = createContext<RecipeContextType>({
   updateRecipe: async () => {},
   deleteRecipe: async () => {},
   getRecipeById: () => undefined,
+  collections: [],
+  addCollection: async () => {},
+  updateCollection: async () => {},
+  deleteCollection: async () => {},
 });
 
 const STORAGE_KEY = '2spoons_recipes';
+const COLLECTIONS_KEY = '2spoons_collections';
 
 // Demo recipes
 const DEMO: Recipe[] = [
@@ -133,6 +151,7 @@ const DEMO: Recipe[] = [
 
 export function RecipeProvider({ children }: { children: React.ReactNode }) {
   const [recipes, setRecipes] = useState<Recipe[]>(DEMO);
+  const [collections, setCollections] = useState<Collection[]>([]);
 
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY).then((json) => {
@@ -141,10 +160,17 @@ export function RecipeProvider({ children }: { children: React.ReactNode }) {
         if (saved.length > 0) setRecipes(saved);
       }
     });
+    AsyncStorage.getItem(COLLECTIONS_KEY).then((json) => {
+      if (json) setCollections(JSON.parse(json));
+    });
   }, []);
 
   const persist = async (list: Recipe[]) => {
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+  };
+
+  const persistCollections = async (list: Collection[]) => {
+    await AsyncStorage.setItem(COLLECTIONS_KEY, JSON.stringify(list));
   };
 
   const addRecipe = async (r: Recipe) => {
@@ -163,12 +189,39 @@ export function RecipeProvider({ children }: { children: React.ReactNode }) {
     const next = recipes.filter((x) => x.id !== id);
     setRecipes(next);
     await persist(next);
+    // Also remove from any collection
+    const nextCols = collections
+      .map(c => ({ ...c, recipeIds: c.recipeIds.filter(rid => rid !== id) }))
+      .filter(c => c.recipeIds.length > 0);
+    setCollections(nextCols);
+    await persistCollections(nextCols);
   };
 
   const getRecipeById = (id: string) => recipes.find((x) => x.id === id);
 
+  const addCollection = async (c: Collection) => {
+    const next = [...collections, c];
+    setCollections(next);
+    await persistCollections(next);
+  };
+
+  const updateCollection = async (c: Collection) => {
+    const next = collections.map(x => (x.id === c.id ? c : x));
+    setCollections(next);
+    await persistCollections(next);
+  };
+
+  const deleteCollection = async (id: string) => {
+    const next = collections.filter(x => x.id !== id);
+    setCollections(next);
+    await persistCollections(next);
+  };
+
   return (
-    <RecipeContext.Provider value={{ recipes, addRecipe, updateRecipe, deleteRecipe, getRecipeById }}>
+    <RecipeContext.Provider value={{
+      recipes, addRecipe, updateRecipe, deleteRecipe, getRecipeById,
+      collections, addCollection, updateCollection, deleteCollection,
+    }}>
       {children}
     </RecipeContext.Provider>
   );

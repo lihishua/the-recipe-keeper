@@ -7,6 +7,34 @@ import { ANTHROPIC_API_KEY } from './secrets';
 const CLAUDE_API = 'https://api.anthropic.com/v1/messages';
 const API_KEY = ANTHROPIC_API_KEY;
 
+/**
+ * Parses an Anthropic API error response body and returns a user-friendly message.
+ * Handles credit errors, auth errors, rate limits, etc.
+ */
+function friendlyApiError(status: number, rawBody: string): Error {
+  let apiMessage = '';
+  try {
+    const parsed = JSON.parse(rawBody);
+    apiMessage = parsed?.error?.message ?? parsed?.message ?? '';
+  } catch {
+    apiMessage = rawBody.slice(0, 200);
+  }
+
+  if (status === 401 || apiMessage.toLowerCase().includes('api key')) {
+    return new Error('API_AUTH');
+  }
+  if (status === 402 || apiMessage.toLowerCase().includes('credit') || apiMessage.toLowerCase().includes('billing')) {
+    return new Error('API_CREDITS');
+  }
+  if (status === 429 || apiMessage.toLowerCase().includes('rate limit')) {
+    return new Error('API_RATE');
+  }
+  if (status >= 500) {
+    return new Error('API_SERVER');
+  }
+  return new Error(apiMessage || `API_${status}`);
+}
+
 function decodeHTMLEntities(str: string): string {
   return str
     .replace(/&amp;/g, '&')
@@ -74,6 +102,47 @@ export async function isRecipeImage(imageUri: string): Promise<boolean> {
     return text?.startsWith('YES');
   } catch {
     return false;
+  }
+}
+
+/**
+ * Checks whether an image is safe for a family cooking app.
+ * Returns { safe: true } or { safe: false, reason: string }.
+ */
+export async function validateImageContent(
+  imageUri: string,
+): Promise<{ safe: boolean; reason?: string }> {
+  try {
+    const { base64, mediaType } = await imageToBase64(imageUri);
+    const res = await fetch(CLAUDE_API, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 60,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
+            { type: 'text', text: 'Does this image contain any content that would violate social media policies — such as nudity, graphic violence, hate symbols, or explicit material? Reply ONLY: SAFE or UNSAFE:<short reason>' },
+          ],
+        }],
+      }),
+    });
+    if (!res.ok) return { safe: true }; // fail open — don't block on API error
+    const data = await res.json();
+    const text = (data?.content?.[0]?.text ?? '').trim();
+    if (text.toUpperCase().startsWith('UNSAFE')) {
+      const reason = text.includes(':') ? text.split(':').slice(1).join(':').trim() : undefined;
+      return { safe: false, reason };
+    }
+    return { safe: true };
+  } catch {
+    return { safe: true }; // fail open
   }
 }
 
@@ -148,7 +217,7 @@ For tags: detect from context if not explicit (e.g. if no meat/fish → vegetari
     if (!res.ok) {
       const rawError = await res.text();
       console.error('Claude API HTTP error:', res.status, rawError);
-      throw new Error(`API ${res.status}: ${rawError.slice(0, 200)}`);
+      throw friendlyApiError(res.status, rawError);
     }
 
     const data = await res.json();
@@ -194,7 +263,7 @@ For tags: detect from context if not explicit (e.g. if no meat/fish → vegetari
  */
 export async function extractRecipeFromImages(
   imageUris: string[],
-): Promise<Partial<Recipe> | null> {
+): Promise<{ recipe: Partial<Recipe>; coverImageIndex: number } | null> {
   try {
     const images = await Promise.all(imageUris.map(uri => imageToBase64(uri)));
 
@@ -203,10 +272,13 @@ export async function extractRecipeFromImages(
       source: { type: 'base64' as const, media_type: mediaType, data: base64 },
     }));
 
-    const prompt = `You are a recipe extraction assistant. The user has provided ${images.length} images that together contain a single recipe (e.g. spread across multiple screenshots). Extract and combine all parts into one complete recipe and return ONLY valid JSON (no markdown, no backticks).
+    const prompt = `You are a recipe extraction assistant. The user has provided ${images.length} images (indexed 0 to ${images.length - 1}) that together contain a single recipe (e.g. spread across multiple screenshots). Extract and combine all parts into one complete recipe and return ONLY valid JSON (no markdown, no backticks).
+
+Also pick the best cover image index: prefer a photo of the finished dish over text/ingredient screenshots.
 
 Return this exact structure:
 {
+  "coverImageIndex": <0-based index of the image that best shows the finished dish>,
   "titleHe": "recipe title in Hebrew",
   "titleEn": "recipe title in English",
   "ingredientsHe": ["ingredient 1 in Hebrew", "ingredient 2 in Hebrew"],
@@ -250,7 +322,7 @@ Translate ALL text to both Hebrew and English. Combine content from all images �
 
     if (!res.ok) {
       const rawError = await res.text();
-      throw new Error(`API ${res.status}: ${rawError.slice(0, 200)}`);
+      throw friendlyApiError(res.status, rawError);
     }
 
     const data = await res.json();
@@ -264,20 +336,27 @@ Translate ALL text to both Hebrew and English. Combine content from all images �
     if (start === -1 || end === -1) return null;
     const parsed = JSON.parse(raw.slice(start, end + 1));
 
+    const coverImageIndex = typeof parsed.coverImageIndex === 'number'
+      ? Math.max(0, Math.min(parsed.coverImageIndex, imageUris.length - 1))
+      : 0;
+
     return {
-      titleHe: parsed.titleHe,
-      titleEn: parsed.titleEn,
-      title: parsed.titleHe,
-      ingredientsHe: parsed.ingredientsHe,
-      ingredientsEn: parsed.ingredientsEn,
-      ingredients: parsed.ingredientsHe,
-      stepsHe: parsed.stepsHe,
-      stepsEn: parsed.stepsEn,
-      steps: parsed.stepsHe,
-      tags: parsed.tags as RecipeTags,
-      category: parsed.category as Category,
-      emoji: parsed.emoji ?? '🍽',
-    } as Partial<Recipe>;
+      recipe: {
+        titleHe: parsed.titleHe,
+        titleEn: parsed.titleEn,
+        title: parsed.titleHe,
+        ingredientsHe: parsed.ingredientsHe,
+        ingredientsEn: parsed.ingredientsEn,
+        ingredients: parsed.ingredientsHe,
+        stepsHe: parsed.stepsHe,
+        stepsEn: parsed.stepsEn,
+        steps: parsed.stepsHe,
+        tags: parsed.tags as RecipeTags,
+        category: parsed.category as Category,
+        emoji: parsed.emoji ?? '🍽',
+      } as Partial<Recipe>,
+      coverImageIndex,
+    };
   } catch (e: any) {
     console.error('extractRecipeFromImages error:', e);
     throw new Error(e?.message ?? 'Unknown error');
@@ -295,6 +374,13 @@ export async function extractRecipeFromUrl(
   // Fetch the HTML with a 10-second timeout
   let html = '';
   let imageUrl: string | undefined;
+
+  // YouTube: derive thumbnail directly from video ID (no fetch needed)
+  const ytMatch = url.match(/(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+  if (ytMatch?.[1]) {
+    imageUrl = `https://img.youtube.com/vi/${ytMatch[1]}/hqdefault.jpg`;
+  }
+
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10000);
@@ -305,10 +391,11 @@ export async function extractRecipeFromUrl(
     clearTimeout(timer);
     html = await resp.text();
 
-    // Extract og:image
+    // Extract og:image (prefer over YouTube fallback for non-YT sites)
     const ogMatch = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
-      ?? html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
-    if (ogMatch?.[1]) imageUrl = ogMatch[1];
+      ?? html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i)
+      ?? html.match(/<meta[^>]+property=["']og:image:secure_url["'][^>]+content=["']([^"']+)["']/i);
+    if (ogMatch?.[1]) imageUrl = decodeHTMLEntities(ogMatch[1]);
   } catch {
     // If fetch fails, proceed with empty HTML so Claude still receives the URL context
   }
@@ -389,7 +476,7 @@ If no recipe is found in the content, return: {"error": "no recipe found"}`;
 
   if (!res.ok) {
     const raw = await res.text();
-    throw new Error(`API ${res.status}: ${raw.slice(0, 200)}`);
+    throw friendlyApiError(res.status, raw);
   }
 
   const data = await res.json();
@@ -430,15 +517,20 @@ export interface NutritionPer100g {
   carbs: number;
   fiber?: number;
   sugar?: number;
+  caloriesPerServing?: number;
 }
 
 /**
  * Estimates nutritional values per 100g of the prepared dish
  * based on the ingredient list.
  */
-export async function calculateNutrition(ingredients: string[]): Promise<NutritionPer100g | null> {
+export async function calculateNutrition(ingredients: string[], yieldCount?: number): Promise<NutritionPer100g | null> {
   const list = ingredients.filter(Boolean).join('\n');
   if (!list) return null;
+
+  const servingClause = yieldCount
+    ? ` Also estimate total prepared weight in grams and return "caloriesPerServing": round(calories * totalGrams / 100 / ${yieldCount}).`
+    : '';
 
   const res = await fetch(CLAUDE_API, {
     method: 'POST',
@@ -453,7 +545,7 @@ export async function calculateNutrition(ingredients: string[]): Promise<Nutriti
       system: 'You are a nutrition expert. You ONLY output valid JSON. No explanations, no markdown.',
       messages: [{
         role: 'user',
-        content: `Estimate the nutritional values per 100g of the prepared dish made from these ingredients:\n${list}\n\nReturn ONLY this JSON (numbers, no units):\n{"calories":<kcal>,"protein":<g>,"fat":<g>,"carbs":<g>,"fiber":<g>,"sugar":<g>}`,
+        content: `Estimate the nutritional values per 100g of the prepared dish made from these ingredients:\n${list}\n\nReturn ONLY this JSON (numbers, no units):${servingClause}\n{"calories":<kcal>,"protein":<g>,"fat":<g>,"carbs":<g>,"fiber":<g>,"sugar":<g>${yieldCount ? ',"caloriesPerServing":<kcal>' : ''}}`,
       }],
     }),
   });
